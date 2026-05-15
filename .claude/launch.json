@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dock-management",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5173"],
+      "cwd": "app",
+      "port": 5173
+    },
+    {
+      "name": "old-project",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5174"],
+      "cwd": "Old Project/app",
+      "port": 5174
+    }
+  ]
+}
