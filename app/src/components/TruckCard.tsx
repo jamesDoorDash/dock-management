@@ -57,7 +57,7 @@ export function TruckCard({
           onClick={onExpand}
           className="flex-1 min-w-0 flex items-center self-center text-left text-body-md font-medium text-ink"
         >
-          <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 border-b border-ink/40 hover:border-ink">
+          <span className="inline-flex min-w-0 max-w-full items-center gap-1 border-b border-ink/40 hover:border-ink">
             <DirectionIcon className="size-3.5 shrink-0" />
             <span className="truncate">{truck.partner}</span>
           </span>
@@ -90,7 +90,7 @@ export function TruckCard({
           >
             <span
               className={cn(
-                "inline-flex min-w-0 max-w-full items-center gap-1.5 border-b",
+                "inline-flex min-w-0 max-w-full items-center gap-1 border-b",
                 onCollapse
                   ? "border-ink/40 hover:border-ink"
                   : "border-transparent",

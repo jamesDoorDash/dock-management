@@ -503,7 +503,6 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                   const width = (truck.durationMinutes / 60) * HOUR_WIDTH;
                   const isDragging = draggingTruckId === a.truckId;
                   const v = variantByTruckId?.(a.truckId) ?? "scheduled";
-                  const isCompact = v === "compact";
                   const source = a.source === "manual" ? "manual" : "auto";
                   // When density is compact but this card is rendered as expanded, it's been
                   // inline-expanded by the user. Break out of the 40px row: dynamic height,

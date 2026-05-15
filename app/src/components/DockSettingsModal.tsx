@@ -6,10 +6,8 @@ import {
   Printer,
   Pencil,
   Trash2,
-  GripVertical,
   Plus,
   ArrowRight,
-  Check,
   ChevronDown,
 } from "lucide-react";
 import type { Dock } from "../data/types";
@@ -28,6 +26,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   docks: Dock[];
+  priorityOrder: string[];
   receivingHours: Hours;
   shippingHours: Hours;
   /** Save callback fired on Confirm with the next state. */
@@ -43,6 +42,7 @@ export function DockSettingsModal({
   open,
   onClose,
   docks: docksProp,
+  priorityOrder: priorityOrderProp,
   receivingHours: receivingHoursProp,
   shippingHours: shippingHoursProp,
   onSave,
@@ -50,7 +50,7 @@ export function DockSettingsModal({
   const [tab, setTab] = useState<Tab>("manage");
   // Local draft state
   const [docks, setDocks] = useState<Dock[]>(docksProp);
-  const [priorityOrder, setPriorityOrder] = useState<string[]>(() => docksProp.map((d) => d.id));
+  const [priorityOrder, setPriorityOrder] = useState<string[]>(priorityOrderProp);
   const [rearranging, setRearranging] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -82,7 +82,10 @@ export function DockSettingsModal({
   const handleToggle = (id: string) =>
     setDocks((prev) => prev.map((d) => (d.id === id ? { ...d, active: !d.active } : d)));
 
-  const handleDelete = (id: string) => setDocks((prev) => prev.filter((d) => d.id !== id));
+  const handleDelete = (id: string) => {
+    setDocks((prev) => prev.filter((d) => d.id !== id));
+    setPriorityOrder((prev) => prev.filter((pid) => pid !== id));
+  };
 
   const startRename = (d: Dock) => {
     setRenamingId(d.id);
@@ -99,18 +102,22 @@ export function DockSettingsModal({
   };
 
   const startAddDock = () => {
-    setAddDockValue(`Dock ${nextDockNumber}`);
+    setAddDockValue(`${nextDockNumber}`);
     setAddingDock(true);
   };
 
   const commitAddDock = () => {
-    const name = addDockValue.trim();
-    if (!name) return;
+    const value = addDockValue.trim();
+    if (!value) return;
+    // Bare numbers/short codes become "Dock <value>"; if the user typed a full
+    // name (e.g. "Loading Bay A"), keep it as entered.
+    const label = /^\S+$/.test(value) && !/^dock\s/i.test(value) ? `Dock ${value}` : value;
+    const id = `dock-${Date.now()}`;
     setDocks((prev) => [
       ...prev,
       {
-        id: `dock-${Date.now()}`,
-        label: name,
+        id,
+        label,
         uuid:
           typeof crypto !== "undefined" && "randomUUID" in crypto
             ? crypto.randomUUID()
@@ -118,7 +125,7 @@ export function DockSettingsModal({
         active: true,
       },
     ]);
-    setPriorityOrder((prev) => [...prev, `dock-${Date.now()}`]);
+    setPriorityOrder((prev) => [...prev, id]);
     setAddingDock(false);
     setAddDockValue("");
   };
@@ -154,7 +161,7 @@ export function DockSettingsModal({
       aria-labelledby="dock-settings-title"
     >
       <div className="absolute inset-0 bg-ink/40" onClick={onClose} />
-      <div className="relative z-10 w-[640px] max-w-[92vw] max-h-[88vh] bg-white rounded-card shadow-drag flex flex-col">
+      <div className="relative z-10 w-[640px] max-w-[92vw] h-[80vh] min-h-[560px] max-h-[800px] bg-white rounded-card shadow-drag flex flex-col">
         {/* Close */}
         <button
           type="button"
@@ -174,9 +181,9 @@ export function DockSettingsModal({
           <div
             className={cn(
               "mt-5 inline-flex w-full items-center rounded-button border border-line-hovered bg-white",
-              addingDock && "opacity-40 pointer-events-none",
+              (addingDock || rearranging) && "opacity-40 pointer-events-none",
             )}
-            aria-disabled={addingDock || undefined}
+            aria-disabled={addingDock || rearranging || undefined}
           >
             <TabButton active={tab === "manage"} onClick={() => setTab("manage")}>
               Manage docks
@@ -235,10 +242,10 @@ export function DockSettingsModal({
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={addingDock}
+            disabled={addingDock || rearranging}
             className={cn(
               "h-10 px-4 rounded-button text-body-md-strong",
-              addingDock
+              addingDock || rearranging
                 ? "bg-surface-strong text-icon-disabled cursor-not-allowed"
                 : "bg-ink text-white hover:opacity-90",
             )}
@@ -369,6 +376,39 @@ function ManageDocksTab({
   cancelAddDock: () => void;
 }) {
   void startRename;
+  const listRef = useRef<HTMLUListElement>(null);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (dragIdx == null) return;
+    const onMove = (e: PointerEvent) => {
+      const list = listRef.current;
+      if (!list) return;
+      const items = Array.from(list.children) as HTMLElement[];
+      let bestIdx = dragIdx;
+      let bestDist = Infinity;
+      for (let i = 0; i < items.length; i++) {
+        const r = items[i].getBoundingClientRect();
+        const dist = Math.abs(e.clientY - (r.top + r.height / 2));
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestIdx = i;
+        }
+      }
+      if (bestIdx !== dragIdx) {
+        reorder(dragIdx, bestIdx);
+        setDragIdx(bestIdx);
+      }
+    };
+    const onUp = () => setDragIdx(null);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [dragIdx, reorder]);
+
   return (
     <div className="pt-1">
       <div
@@ -384,9 +424,8 @@ function ManageDocksTab({
           <button
             type="button"
             onClick={() => setRearranging(false)}
-            className="h-9 px-3 rounded-button border border-line-strong bg-white text-body-sm-strong text-ink hover:bg-surface-hovered inline-flex items-center gap-1.5"
+            className="h-9 px-3 rounded-button bg-ink text-body-sm-strong text-white hover:opacity-90"
           >
-            <Check className="size-4" />
             Done rearranging
           </button>
         ) : (
@@ -401,20 +440,30 @@ function ManageDocksTab({
         )}
       </div>
 
-      <ul className={cn("py-1", addingDock && "opacity-40 pointer-events-none")}>
+      <ul
+        ref={listRef}
+        className={cn("py-1", addingDock && "opacity-40 pointer-events-none")}
+      >
         {docks.map((d, idx) => (
           <ManageDockRow
             key={d.id}
             dock={d}
             rearranging={rearranging}
+            isDragging={idx === dragIdx}
             isRenaming={renamingId === d.id}
             renameValue={renameValue}
             setRenameValue={setRenameValue}
             commitRename={commitRename}
             onToggle={() => onToggle(d.id)}
             onMenuOpen={(rect) => onMenuOpen(d.id, rect)}
-            onMoveUp={idx > 0 ? () => reorder(idx, idx - 1) : undefined}
-            onMoveDown={idx < docks.length - 1 ? () => reorder(idx, idx + 1) : undefined}
+            onDragStart={
+              rearranging
+                ? (e) => {
+                    setDragIdx(idx);
+                    e.preventDefault();
+                  }
+                : undefined
+            }
           />
         ))}
       </ul>
@@ -470,44 +519,47 @@ function ManageDocksTab({
 function ManageDockRow({
   dock,
   rearranging,
+  isDragging,
   isRenaming,
   renameValue,
   setRenameValue,
   commitRename,
   onToggle,
   onMenuOpen,
-  onMoveUp,
-  onMoveDown,
+  onDragStart,
 }: {
   dock: Dock;
   rearranging: boolean;
+  isDragging: boolean;
   isRenaming: boolean;
   renameValue: string;
   setRenameValue: (v: string) => void;
   commitRename: () => void;
   onToggle: () => void;
   onMenuOpen: (rect: DOMRect) => void;
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
+  onDragStart?: (e: React.PointerEvent) => void;
 }) {
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const shortcode = dock.uuid.slice(0, 4);
   return (
-    <li className="flex items-center gap-3 py-2 border-b border-line last:border-b-0">
-      {rearranging && (
-        <div className="flex flex-col -my-1">
-          <button
-            type="button"
-            onClick={onMoveUp}
-            disabled={!onMoveUp}
-            aria-label="Move up"
-            className="text-icon-subdued disabled:text-icon-disabled hover:text-ink"
-          >
-            <GripVertical className="size-4" />
-          </button>
-        </div>
+    <li
+      className={cn(
+        "flex items-center gap-3 py-2 border-b border-line last:border-b-0 select-none",
+        isDragging && "bg-surface-hovered shadow-card relative z-10",
       )}
-      <Switch checked={dock.active} onChange={onToggle} disabled={rearranging} />
+    >
+      {rearranging ? (
+        <button
+          type="button"
+          aria-label={`Drag ${dock.label}`}
+          onPointerDown={onDragStart}
+          className="cursor-grab active:cursor-grabbing touch-none text-icon-subdued hover:text-ink"
+        >
+          <SixDotGrip className="size-4" />
+        </button>
+      ) : (
+        <Switch checked={dock.active} onChange={onToggle} disabled={rearranging} />
+      )}
       {isRenaming ? (
         <input
           autoFocus
@@ -528,18 +580,8 @@ function ManageDockRow({
           {shortcode}
         </span>
       </Tooltip>
-      <div className="ml-auto flex items-center gap-1">
-        {rearranging && onMoveDown && (
-          <button
-            type="button"
-            onClick={onMoveDown}
-            aria-label="Move down"
-            className="text-icon-subdued hover:text-ink size-7 grid place-items-center"
-          >
-            <GripVertical className="size-4 rotate-180" />
-          </button>
-        )}
-        {!rearranging && (
+      {!rearranging && (
+        <div className="ml-auto flex items-center gap-1">
           <button
             ref={menuBtnRef}
             type="button"
@@ -553,8 +595,8 @@ function ManageDockRow({
           >
             <MoreHorizontal className="size-5 text-icon-subdued" />
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </li>
   );
 }
@@ -603,51 +645,95 @@ function DockPriorityTab({
   priorityOrder: string[];
   reorder: (from: number, to: number) => void;
 }) {
-  const docksById = Object.fromEntries(docks.map((d) => [d.id, d]));
+  const docksById = useMemo(() => Object.fromEntries(docks.map((d) => [d.id, d])), [docks]);
+  const listRef = useRef<HTMLUListElement>(null);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+
+  // Global pointer move/up while a row is being dragged
+  useEffect(() => {
+    if (dragIdx == null) return;
+    const onMove = (e: PointerEvent) => {
+      const list = listRef.current;
+      if (!list) return;
+      const items = Array.from(list.children) as HTMLElement[];
+      // Find the row whose vertical midpoint is closest to the cursor
+      let bestIdx = dragIdx;
+      let bestDist = Infinity;
+      for (let i = 0; i < items.length; i++) {
+        const r = items[i].getBoundingClientRect();
+        const dist = Math.abs(e.clientY - (r.top + r.height / 2));
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestIdx = i;
+        }
+      }
+      if (bestIdx !== dragIdx) {
+        reorder(dragIdx, bestIdx);
+        setDragIdx(bestIdx);
+      }
+    };
+    const onUp = () => setDragIdx(null);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [dragIdx, reorder]);
+
   return (
     <div className="pt-1">
       <div className="py-3 sticky top-0 bg-white z-10 -mx-2 px-2 border-b border-line">
         <p className="text-body-md-strong text-ink">Drag to assign priority</p>
         <p className="text-body-sm text-ink-subdued">
-          Trucks are auto-assigned starting from the top.
+          Docks at the top of the list will be auto-assigned trucks first
         </p>
       </div>
-      <ul className="py-1">
+      <ul ref={listRef} className="py-1">
         {priorityOrder.map((dockId, idx) => {
           const d = docksById[dockId];
           if (!d) return null;
+          const isDragging = idx === dragIdx;
           return (
             <li
               key={d.id}
-              className="flex items-center gap-3 py-2 border-b border-line last:border-b-0"
+              className={cn(
+                "flex items-center gap-4 py-3 border-b border-line last:border-b-0 select-none",
+                isDragging && "bg-surface-hovered shadow-card relative z-10",
+              )}
             >
               <button
                 type="button"
-                aria-label="Move up"
-                onClick={() => idx > 0 && reorder(idx, idx - 1)}
-                disabled={idx === 0}
-                className="text-icon-subdued disabled:text-icon-disabled hover:text-ink"
+                aria-label={`Drag ${d.label}`}
+                onPointerDown={(e) => {
+                  setDragIdx(idx);
+                  e.preventDefault();
+                }}
+                className="cursor-grab active:cursor-grabbing touch-none text-icon-subdued hover:text-ink"
               >
-                <GripVertical className="size-4" />
+                <SixDotGrip className="size-4" />
               </button>
-              <span className="size-6 grid place-items-center text-body-sm-strong text-ink-subdued">
-                {idx + 1}
-              </span>
-              <p className="text-body-md-strong text-ink">{d.label}</p>
-              <span className="text-body-sm text-ink-subdued">·</span>
-              <span
-                className={cn(
-                  "text-body-sm",
-                  idx < 8 ? "text-positive" : idx < 16 ? "text-ink" : "text-ink-subdued",
-                )}
-              >
-                {idx < 8 ? "High priority" : idx < 16 ? "Medium priority" : "Low priority"}
-              </span>
+              <p className="text-body-md-strong text-ink w-20 shrink-0">{d.label}</p>
+              <span className="text-body-md text-ink-subdued">Priority {idx + 1}</span>
             </li>
           );
         })}
       </ul>
     </div>
+  );
+}
+
+/** 6-dot drag handle (2 columns × 3 rows) matching the Figma design. */
+function SixDotGrip({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="currentColor" className={className} aria-hidden>
+      <circle cx="6" cy="3.5" r="1.25" />
+      <circle cx="10" cy="3.5" r="1.25" />
+      <circle cx="6" cy="8" r="1.25" />
+      <circle cx="10" cy="8" r="1.25" />
+      <circle cx="6" cy="12.5" r="1.25" />
+      <circle cx="10" cy="12.5" r="1.25" />
+    </svg>
   );
 }
 

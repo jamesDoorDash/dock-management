@@ -39,6 +39,7 @@ export function DockManagementV2() {
   const [blockingMode, setBlockingMode] = useState(false);
   const [dockSettingsOpen, setDockSettingsOpen] = useState(false);
   const [docks, setDocks] = useState<Dock[]>(DOCKS);
+  const [priorityOrder, setPriorityOrder] = useState<string[]>(() => DOCKS.map((d) => d.id));
   const [receivingHours, setReceivingHours] = useState(FACILITY.receivingHours);
   const [shippingHours, setShippingHours] = useState(FACILITY.shippingHours);
   const [blocked, setBlocked] = useState<BlockedSlot[]>(BLOCKED_SLOTS);
@@ -58,12 +59,21 @@ export function DockManagementV2() {
 
   // Trucks visible on the schedule for the current viewing date
   const trucksForDate = useMemo(() => TRUCKS.filter((t) => t.dateIso === dateIso), [dateIso]);
-  // Only active docks are shown on the schedule
+  // Display order — schedule left column matches the canonical dock order from Manage docks
   const activeDocks = useMemo(() => docks.filter((d) => d.active), [docks]);
+  // Auto-assign uses priority order to pick the first available dock — drives WHICH dock a truck lands in
+  const priorityActiveDocks = useMemo(() => {
+    const byId = new Map(activeDocks.map((d) => [d.id, d]));
+    const inOrder = priorityOrder
+      .map((id) => byId.get(id))
+      .filter((d): d is Dock => !!d);
+    const extras = activeDocks.filter((d) => !priorityOrder.includes(d.id));
+    return [...inOrder, ...extras];
+  }, [activeDocks, priorityOrder]);
   // Auto-assignment layout for the current date — recomputed when date or blocked slots change
   const autoForDate = useMemo(
-    () => autoAssignAll(trucksForDate, activeDocks, blocked),
-    [trucksForDate, activeDocks, blocked],
+    () => autoAssignAll(trucksForDate, priorityActiveDocks, blocked),
+    [trucksForDate, priorityActiveDocks, blocked],
   );
   const autoById = useMemo(
     () => Object.fromEntries(autoForDate.map((a) => [a.truckId, a])) as Record<string, Assignment>,
@@ -268,6 +278,8 @@ export function DockManagementV2() {
         onEnterBlockingMode={() => setBlockingMode(true)}
         onExitBlockingMode={() => setBlockingMode(false)}
         onDockSettings={() => setDockSettingsOpen(true)}
+        receivingHours={receivingHours}
+        shippingHours={shippingHours}
       />
 
       <div className="relative flex-1 min-h-0 flex flex-col">
@@ -379,10 +391,12 @@ export function DockManagementV2() {
         open={dockSettingsOpen}
         onClose={() => setDockSettingsOpen(false)}
         docks={docks}
+        priorityOrder={priorityOrder}
         receivingHours={receivingHours}
         shippingHours={shippingHours}
         onSave={(next) => {
           setDocks(next.docks);
+          setPriorityOrder(next.priorityOrder);
           setReceivingHours(next.receivingHours);
           setShippingHours(next.shippingHours);
           // Clear manual overrides for docks that no longer exist or got deactivated

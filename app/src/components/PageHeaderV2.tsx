@@ -1,7 +1,11 @@
 import { Calendar, ChevronLeft, ChevronRight, Minus, Plus, Pause, Settings } from "lucide-react";
-import { FACILITY } from "../data/mock";
 import { formatDateLabel } from "../lib/time";
 import { cn } from "../lib/cn";
+
+interface Hours {
+  startMinutes: number;
+  endMinutes: number;
+}
 
 interface Props {
   dateIso: string;
@@ -15,6 +19,8 @@ interface Props {
   onEnterBlockingMode: () => void;
   onExitBlockingMode: () => void;
   onDockSettings?: () => void;
+  receivingHours: Hours;
+  shippingHours: Hours;
 }
 
 function HoursRow({ label, range }: { label: string; range: { startMinutes: number; endMinutes: number } }) {
@@ -46,6 +52,8 @@ export function PageHeaderV2({
   onEnterBlockingMode,
   onExitBlockingMode,
   onDockSettings,
+  receivingHours,
+  shippingHours,
 }: Props) {
   const zoomOutDisabled = zoom === "compact";
   const zoomInDisabled = zoom === "expanded";
@@ -60,8 +68,8 @@ export function PageHeaderV2({
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <HoursRow label="Receiving hours:" range={FACILITY.receivingHours} />
-          <HoursRow label="Shipping hours:" range={FACILITY.shippingHours} />
+          <HoursRow label="Receiving hours:" range={receivingHours} />
+          <HoursRow label="Shipping hours:" range={shippingHours} />
         </div>
       </div>
 
