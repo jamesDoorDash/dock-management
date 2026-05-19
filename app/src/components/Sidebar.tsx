@@ -1,17 +1,84 @@
-import {
-  LayoutDashboard,
-  BarChart3,
-  Truck,
-  CalendarClock,
-  Package,
-  RotateCcw,
-  Settings,
-  ChevronDown,
-  ChevronsLeft,
-} from "lucide-react";
+import { useState } from "react";
+import { Truck, CalendarClock, Undo2, Container, Settings, ChevronDown, ChevronsLeft } from "lucide-react";
 import { cn } from "../lib/cn";
 
-export type PrototypeVersion = "v1" | "v2";
+export type PrototypeVersion =
+  | "v1"
+  | "v2"
+  | "v3"
+  | "v4"
+  | "v5"
+  | "v6"
+  | "v7"
+  | "v8"
+  | "v9"
+  | "v10"
+  | "v11"
+  | "v12"
+  | "v13"
+  | "v14"
+  | "v15"
+  | "v16"
+  | "v17"
+  | "v18"
+  | "v19"
+  | "v20"
+  | "v21"
+  | "v22"
+  | "v23"
+  | "v24"
+  | "v25"
+  | "v26"
+  | "v27"
+  | "v28"
+  | "v29"
+  | "v30"
+  | "v31"
+  | "v32"
+  | "v33";
+
+/** Versions promoted to the "Top contenders" shortlist. */
+export const TOP_CONTENDERS: PrototypeVersion[] = [
+  "v3",
+  "v6",
+  "v20",
+];
+
+export const VERSION_OPTIONS: { id: PrototypeVersion; label: string }[] = [
+  { id: "v1", label: "V1: First draft" },
+  { id: "v2", label: "V2: Auto assign" },
+  { id: "v3", label: "V3: Iteration" },
+  { id: "v4", label: "V4: 2px bar (thin)" },
+  { id: "v5", label: "V5: 4px bar (baseline)" },
+  { id: "v6", label: "V6: 6px bar (thick)" },
+  { id: "v7", label: "V7: No bg fill" },
+  { id: "v8", label: "V8: White bg + neutral border" },
+  { id: "v9", label: "V9: Soft bg + colored border" },
+  { id: "v10", label: "V10: Sharp corners" },
+  { id: "v11", label: "V11: V10 + small border" },
+  { id: "v12", label: "V12: Large radius (12px)" },
+  { id: "v13", label: "V13: Pill radius" },
+  { id: "v14", label: "V14: Outline only, no fill" },
+  { id: "v15", label: "V15: Inset bar, sharp corners" },
+  { id: "v16", label: "V16: Inset bar, 8px corners" },
+  { id: "v17", label: "V17: Inset bar + small border" },
+  { id: "v18", label: "V18: Inset bar, thicker" },
+  { id: "v19", label: "V19: Solid pastel fill, no bar" },
+  { id: "v20", label: "V20: Viz Refresh" },
+  { id: "v21", label: "V21: V18 + white bg + thin colored border" },
+  { id: "v22", label: "V22: V21 + minimal grey border" },
+  { id: "v23", label: "V23: V14 + white fill" },
+  { id: "v24", label: "V24: Saturated fill + white text" },
+  { id: "v25", label: "V25: Medium pastel + colored bold text" },
+  { id: "v26", label: "V26: White + dot + colored text" },
+  { id: "v27", label: "V27: White + 8px thick left bar" },
+  { id: "v28", label: "V28: Soft bg + colored halo shadow" },
+  { id: "v29", label: "V29: Diagonal gradient" },
+  { id: "v30", label: "V30: White + colored top bar" },
+  { id: "v31", label: "V31: Dark bg + inset bar + white text" },
+  { id: "v32", label: "V32: Sticker (offset colored shadow)" },
+  { id: "v33", label: "V33: Pill fill + white text" },
+];
 
 interface SidebarProps {
   version: PrototypeVersion;
@@ -19,12 +86,10 @@ interface SidebarProps {
 }
 
 const NAV_ITEMS = [
-  { icon: LayoutDashboard, label: "Dashboard" },
-  { icon: BarChart3, label: "Performance" },
-  { icon: Truck, label: "Trucks", expandable: true },
+  { icon: Truck, label: "Inbound" },
   { icon: CalendarClock, label: "Dock management", active: true },
-  { icon: Package, label: "All parcels" },
-  { icon: RotateCcw, label: "Returns" },
+  { icon: Undo2, label: "Returns" },
+  { icon: Container, label: "Outbound" },
   { icon: Settings, label: "Admin" },
 ];
 
@@ -71,44 +136,15 @@ export function Sidebar({ version, onVersionChange }: SidebarProps) {
               )}
             >
               <Icon className={cn("size-[18px]", item.active ? "text-ink" : "text-icon-subdued")} />
-              <span
-                className={cn(
-                  "flex-1 text-body-md",
-                  item.active && "font-bold text-ink",
-                )}
-              >
+              <span className={cn("flex-1 text-body-md", item.active && "font-bold text-ink")}>
                 {item.label}
               </span>
-              {item.expandable && <ChevronDown className="size-4 text-icon-subdued" />}
             </button>
           );
         })}
       </nav>
 
-      {/* Prototype version selector */}
-      <div className="mx-4 mb-2 rounded-card bg-ink text-white p-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-body-sm-strong text-white">Prototype version</p>
-            <p className="text-body-sm text-white/50">Top contenders</p>
-          </div>
-          <button type="button" className="text-body-sm underline text-white/90">
-            Show all
-          </button>
-        </div>
-        <div className="mt-2 flex flex-col gap-1">
-          <VersionOption
-            checked={version === "v1"}
-            label="V1: First draft"
-            onClick={() => onVersionChange("v1")}
-          />
-          <VersionOption
-            checked={version === "v2"}
-            label="V2: Auto assign"
-            onClick={() => onVersionChange("v2")}
-          />
-        </div>
-      </div>
+      <PrototypeVersionPicker version={version} onVersionChange={onVersionChange} />
 
       {/* Collapse */}
       <button
@@ -119,6 +155,58 @@ export function Sidebar({ version, onVersionChange }: SidebarProps) {
         <span>Collapse menu</span>
       </button>
     </aside>
+  );
+}
+
+function PrototypeVersionPicker({
+  version,
+  onVersionChange,
+}: {
+  version: PrototypeVersion;
+  onVersionChange: (v: PrototypeVersion) => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  // Always show top contenders. If the currently-selected version isn't on the
+  // shortlist, surface it too so the selection stays visible.
+  const topIds = new Set<PrototypeVersion>(TOP_CONTENDERS);
+  if (!topIds.has(version)) topIds.add(version);
+  const visible = showAll
+    ? VERSION_OPTIONS
+    : VERSION_OPTIONS.filter((o) => topIds.has(o.id));
+
+  return (
+    <div className="mx-4 mb-2 rounded-card bg-ink text-white p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-body-sm-strong text-white">Prototype version</p>
+          <p className="text-body-sm text-white/50">
+            {showAll ? "← / → to cycle" : "Top contenders"}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowAll((s) => !s)}
+          className="text-body-sm underline text-white/90 hover:text-white"
+        >
+          {showAll ? "Show less" : "Show all"}
+        </button>
+      </div>
+      <div
+        className={cn(
+          "mt-2 flex flex-col gap-1 pr-1",
+          showAll && "max-h-[260px] overflow-y-auto",
+        )}
+      >
+        {visible.map((opt) => (
+          <VersionOption
+            key={opt.id}
+            checked={version === opt.id}
+            label={opt.label}
+            onClick={() => onVersionChange(opt.id)}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 

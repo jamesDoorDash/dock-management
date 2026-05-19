@@ -1,6 +1,8 @@
+import { useRef, useState } from "react";
 import { Calendar, ChevronLeft, ChevronRight, Minus, Plus, Pause, Settings } from "lucide-react";
 import { formatDateLabel } from "../lib/time";
 import { cn } from "../lib/cn";
+import { SingleDatePicker } from "./SingleDatePicker";
 
 interface Hours {
   startMinutes: number;
@@ -12,6 +14,7 @@ interface Props {
   onPrevDay: () => void;
   onNextDay: () => void;
   onToday: () => void;
+  onSetDate: (iso: string) => void;
   zoom: "compact" | "expanded";
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -45,6 +48,7 @@ export function PageHeaderV2({
   onPrevDay,
   onNextDay,
   onToday,
+  onSetDate,
   zoom,
   onZoomIn,
   onZoomOut,
@@ -55,6 +59,8 @@ export function PageHeaderV2({
   receivingHours,
   shippingHours,
 }: Props) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const dateBtnRef = useRef<HTMLButtonElement>(null);
   const zoomOutDisabled = zoom === "compact";
   const zoomInDisabled = zoom === "expanded";
 
@@ -90,13 +96,30 @@ export function PageHeaderV2({
           >
             <ChevronLeft className="size-5 text-ink" />
           </button>
-          <button
-            type="button"
-            className="h-10 px-3 inline-flex items-center gap-1 rounded-button border border-line-strong bg-white text-body-md-strong text-ink hover:bg-surface-hovered"
-          >
-            <Calendar className="size-5 text-ink" />
-            {formatDateLabel(dateIso)}
-          </button>
+          <div className="relative">
+            <button
+              ref={dateBtnRef}
+              type="button"
+              onClick={() => setPickerOpen((o) => !o)}
+              aria-haspopup="dialog"
+              aria-expanded={pickerOpen}
+              className={cn(
+                "h-10 px-3 inline-flex items-center gap-1 rounded-button border border-line-strong bg-white text-body-md-strong text-ink hover:bg-surface-hovered",
+                pickerOpen && "border-ink",
+              )}
+            >
+              <Calendar className="size-5 text-ink" />
+              {formatDateLabel(dateIso)}
+            </button>
+            {pickerOpen && (
+              <SingleDatePicker
+                value={dateIso}
+                onChange={onSetDate}
+                onClose={() => setPickerOpen(false)}
+                anchorRef={dateBtnRef}
+              />
+            )}
+          </div>
           <button
             type="button"
             onClick={onNextDay}
@@ -106,7 +129,7 @@ export function PageHeaderV2({
             <ChevronRight className="size-5 text-ink" />
           </button>
 
-          <div className="w-px h-6 bg-line mx-2" />
+          <div className="w-4" />
 
           <button
             type="button"

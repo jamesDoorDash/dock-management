@@ -376,44 +376,43 @@ function ManageDocksTab({
   cancelAddDock: () => void;
 }) {
   void startRename;
-  const listRef = useRef<HTMLUListElement>(null);
-  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const REARRANGE_ROW_H = 56;
+  const [drag, setDrag] = useState<{
+    id: string;
+    pointerOffset: number;
+    cursorY: number;
+    containerTop: number;
+  } | null>(null);
 
   useEffect(() => {
-    if (dragIdx == null) return;
+    if (!drag) return;
     const onMove = (e: PointerEvent) => {
-      const list = listRef.current;
-      if (!list) return;
-      const items = Array.from(list.children) as HTMLElement[];
-      let bestIdx = dragIdx;
-      let bestDist = Infinity;
-      for (let i = 0; i < items.length; i++) {
-        const r = items[i].getBoundingClientRect();
-        const dist = Math.abs(e.clientY - (r.top + r.height / 2));
-        if (dist < bestDist) {
-          bestDist = dist;
-          bestIdx = i;
-        }
+      const draggedTop = e.clientY - drag.pointerOffset - drag.containerTop;
+      const targetIdx = Math.max(
+        0,
+        Math.min(docks.length - 1, Math.round(draggedTop / REARRANGE_ROW_H)),
+      );
+      const currentIdx = docks.findIndex((d) => d.id === drag.id);
+      if (currentIdx !== -1 && targetIdx !== currentIdx) {
+        reorder(currentIdx, targetIdx);
       }
-      if (bestIdx !== dragIdx) {
-        reorder(dragIdx, bestIdx);
-        setDragIdx(bestIdx);
-      }
+      setDrag((d) => (d ? { ...d, cursorY: e.clientY } : d));
     };
-    const onUp = () => setDragIdx(null);
+    const onUp = () => setDrag(null);
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, { once: true });
     return () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [dragIdx, reorder]);
+  }, [drag, docks, reorder]);
 
   return (
     <div className="pt-1">
       <div
         className={cn(
-          "flex items-center justify-between py-3 sticky top-0 bg-white z-10 -mx-2 px-2 border-b border-line",
+          "flex items-center justify-between py-3 sticky top-0 bg-white z-10 -mx-2 px-2",
           addingDock && "opacity-40 pointer-events-none",
         )}
       >
@@ -440,33 +439,74 @@ function ManageDocksTab({
         )}
       </div>
 
-      <ul
-        ref={listRef}
-        className={cn("py-1", addingDock && "opacity-40 pointer-events-none")}
-      >
-        {docks.map((d, idx) => (
-          <ManageDockRow
-            key={d.id}
-            dock={d}
-            rearranging={rearranging}
-            isDragging={idx === dragIdx}
-            isRenaming={renamingId === d.id}
-            renameValue={renameValue}
-            setRenameValue={setRenameValue}
-            commitRename={commitRename}
-            onToggle={() => onToggle(d.id)}
-            onMenuOpen={(rect) => onMenuOpen(d.id, rect)}
-            onDragStart={
-              rearranging
-                ? (e) => {
-                    setDragIdx(idx);
-                    e.preventDefault();
-                  }
-                : undefined
-            }
-          />
-        ))}
-      </ul>
+      {rearranging ? (
+        <div
+          ref={containerRef}
+          className={cn("relative mt-2", addingDock && "opacity-40 pointer-events-none")}
+          style={{ height: docks.length * REARRANGE_ROW_H }}
+        >
+          {docks.map((d, idx) => {
+            const isDragging = drag?.id === d.id;
+            const y = isDragging
+              ? drag.cursorY - drag.pointerOffset - drag.containerTop
+              : idx * REARRANGE_ROW_H;
+            const shortcode = d.uuid.slice(0, 4);
+            return (
+              <div
+                key={d.id}
+                onPointerDown={(e) => {
+                  const container = containerRef.current;
+                  if (!container) return;
+                  const row = e.currentTarget;
+                  setDrag({
+                    id: d.id,
+                    pointerOffset: e.clientY - row.getBoundingClientRect().top,
+                    cursorY: e.clientY,
+                    containerTop: container.getBoundingClientRect().top,
+                  });
+                  e.preventDefault();
+                }}
+                style={{
+                  transform: `translate3d(0, ${y}px, 0)${isDragging ? " scale(1.02)" : ""}`,
+                  transition: isDragging
+                    ? "none"
+                    : "transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 200ms ease",
+                  zIndex: isDragging ? 20 : 1,
+                }}
+                className={cn(
+                  "absolute inset-x-0 h-12 flex items-center gap-4 px-4 rounded-card border bg-white select-none cursor-grab active:cursor-grabbing touch-none",
+                  isDragging ? "border-ink shadow-drag" : "border-line",
+                )}
+              >
+                <SixDotGrip className="size-4 text-icon-subdued" />
+                <p className="text-body-md-strong text-ink">{d.label}</p>
+                <Tooltip label={d.uuid}>
+                  <span className="text-body-sm text-ink-subdued underline decoration-dotted decoration-ink-subdued underline-offset-2 cursor-default">
+                    {shortcode}
+                  </span>
+                </Tooltip>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <ul className={cn("py-1", addingDock && "opacity-40 pointer-events-none")}>
+          {docks.map((d) => (
+            <ManageDockRow
+              key={d.id}
+              dock={d}
+              rearranging={false}
+              isDragging={false}
+              isRenaming={renamingId === d.id}
+              renameValue={renameValue}
+              setRenameValue={setRenameValue}
+              commitRename={commitRename}
+              onToggle={() => onToggle(d.id)}
+              onMenuOpen={(rect) => onMenuOpen(d.id, rect)}
+            />
+          ))}
+        </ul>
+      )}
 
       {addingDock ? (
         <div className="mt-3 flex items-center gap-3">
@@ -543,20 +583,18 @@ function ManageDockRow({
   const shortcode = dock.uuid.slice(0, 4);
   return (
     <li
+      onPointerDown={rearranging ? onDragStart : undefined}
       className={cn(
-        "flex items-center gap-3 py-2 border-b border-line last:border-b-0 select-none",
-        isDragging && "bg-surface-hovered shadow-card relative z-10",
+        rearranging
+          ? cn(
+              "flex items-center gap-4 px-4 h-12 mb-2 rounded-card border bg-white select-none cursor-grab active:cursor-grabbing touch-none",
+              isDragging ? "border-ink shadow-drag relative z-10" : "border-line",
+            )
+          : "flex items-center gap-3 py-2 border-b border-line last:border-b-0 select-none",
       )}
     >
       {rearranging ? (
-        <button
-          type="button"
-          aria-label={`Drag ${dock.label}`}
-          onPointerDown={onDragStart}
-          className="cursor-grab active:cursor-grabbing touch-none text-icon-subdued hover:text-ink"
-        >
-          <SixDotGrip className="size-4" />
-        </button>
+        <SixDotGrip className="size-4 text-icon-subdued" />
       ) : (
         <Switch checked={dock.active} onChange={onToggle} disabled={rearranging} />
       )}
@@ -646,79 +684,110 @@ function DockPriorityTab({
   reorder: (from: number, to: number) => void;
 }) {
   const docksById = useMemo(() => Object.fromEntries(docks.map((d) => [d.id, d])), [docks]);
-  const listRef = useRef<HTMLUListElement>(null);
-  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const ROW_H = 56; // card height + gap (px)
+  const [drag, setDrag] = useState<{
+    id: string;
+    pointerOffset: number; // cursorY - row.top at pickup
+    cursorY: number;
+    containerTop: number;
+  } | null>(null);
 
-  // Global pointer move/up while a row is being dragged
   useEffect(() => {
-    if (dragIdx == null) return;
+    if (!drag) return;
     const onMove = (e: PointerEvent) => {
-      const list = listRef.current;
-      if (!list) return;
-      const items = Array.from(list.children) as HTMLElement[];
-      // Find the row whose vertical midpoint is closest to the cursor
-      let bestIdx = dragIdx;
-      let bestDist = Infinity;
-      for (let i = 0; i < items.length; i++) {
-        const r = items[i].getBoundingClientRect();
-        const dist = Math.abs(e.clientY - (r.top + r.height / 2));
-        if (dist < bestDist) {
-          bestDist = dist;
-          bestIdx = i;
-        }
+      const draggedTop = e.clientY - drag.pointerOffset - drag.containerTop;
+      const targetIdx = Math.max(
+        0,
+        Math.min(priorityOrder.length - 1, Math.round(draggedTop / ROW_H)),
+      );
+      const currentIdx = priorityOrder.indexOf(drag.id);
+      if (currentIdx !== -1 && targetIdx !== currentIdx) {
+        reorder(currentIdx, targetIdx);
       }
-      if (bestIdx !== dragIdx) {
-        reorder(dragIdx, bestIdx);
-        setDragIdx(bestIdx);
-      }
+      setDrag((d) => (d ? { ...d, cursorY: e.clientY } : d));
     };
-    const onUp = () => setDragIdx(null);
+    const onUp = () => setDrag(null);
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, { once: true });
     return () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [dragIdx, reorder]);
+  }, [drag, priorityOrder, reorder]);
 
   return (
     <div className="pt-1">
-      <div className="py-3 sticky top-0 bg-white z-10 -mx-2 px-2 border-b border-line">
+      <div className="py-3 sticky top-0 bg-white z-10 -mx-2 px-2">
         <p className="text-body-md-strong text-ink">Drag to assign priority</p>
         <p className="text-body-sm text-ink-subdued">
           Docks at the top of the list will be auto-assigned trucks first
         </p>
       </div>
-      <ul ref={listRef} className="py-1">
-        {priorityOrder.map((dockId, idx) => {
-          const d = docksById[dockId];
-          if (!d) return null;
-          const isDragging = idx === dragIdx;
-          return (
-            <li
-              key={d.id}
-              className={cn(
-                "flex items-center gap-4 py-3 border-b border-line last:border-b-0 select-none",
-                isDragging && "bg-surface-hovered shadow-card relative z-10",
-              )}
+      <div className="mt-3 flex gap-3">
+        {/* Priority number column — static slots, never moves */}
+        <div
+          className="flex flex-col shrink-0"
+          aria-hidden
+          style={{ height: priorityOrder.length * ROW_H }}
+        >
+          {priorityOrder.map((_, idx) => (
+            <div
+              key={idx}
+              style={{ height: ROW_H }}
+              className="w-6 flex items-center justify-start text-body-md text-ink-subdued tabular-nums"
             >
-              <button
-                type="button"
-                aria-label={`Drag ${d.label}`}
+              {idx + 1}
+            </div>
+          ))}
+        </div>
+        <div
+          ref={containerRef}
+          className="relative flex-1"
+          style={{ height: priorityOrder.length * ROW_H }}
+        >
+          {priorityOrder.map((dockId, idx) => {
+            const d = docksById[dockId];
+            if (!d) return null;
+            const isDragging = drag?.id === d.id;
+            const y = isDragging
+              ? drag.cursorY - drag.pointerOffset - drag.containerTop
+              : idx * ROW_H;
+            return (
+              <div
+                key={d.id}
+                data-row
                 onPointerDown={(e) => {
-                  setDragIdx(idx);
+                  const container = containerRef.current;
+                  if (!container) return;
+                  const row = e.currentTarget;
+                  setDrag({
+                    id: d.id,
+                    pointerOffset: e.clientY - row.getBoundingClientRect().top,
+                    cursorY: e.clientY,
+                    containerTop: container.getBoundingClientRect().top,
+                  });
                   e.preventDefault();
                 }}
-                className="cursor-grab active:cursor-grabbing touch-none text-icon-subdued hover:text-ink"
+                style={{
+                  transform: `translate3d(0, ${y}px, 0)${isDragging ? " scale(1.02)" : ""}`,
+                  transition: isDragging
+                    ? "none"
+                    : "transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 200ms ease",
+                  zIndex: isDragging ? 20 : 1,
+                }}
+                className={cn(
+                  "absolute inset-x-0 h-12 flex items-center gap-4 px-4 rounded-card border bg-white select-none cursor-grab active:cursor-grabbing touch-none",
+                  isDragging ? "border-ink shadow-drag" : "border-line",
+                )}
               >
-                <SixDotGrip className="size-4" />
-              </button>
-              <p className="text-body-md-strong text-ink w-20 shrink-0">{d.label}</p>
-              <span className="text-body-md text-ink-subdued">Priority {idx + 1}</span>
-            </li>
-          );
-        })}
-      </ul>
+                <SixDotGrip className="size-4 text-icon-subdued" />
+                <p className="text-body-md-strong text-ink">{d.label}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

@@ -2,11 +2,11 @@ import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import { RotateCw, Info } from "lucide-react";
 import { PageHeaderV2 } from "../components/PageHeaderV2";
 import { ScheduleGrid, type ScheduleGridHandle } from "../components/ScheduleGrid";
-import { TruckCard } from "../components/TruckCard";
+import { TruckCard, type Treatment } from "../components/TruckCard";
 import { PopoverMenu } from "../components/PopoverMenu";
 import { DockSettingsModal } from "../components/DockSettingsModal";
 import { TruckDetailSheet } from "../components/TruckDetailSheet";
-import { BLOCKED_SLOTS, DOCKS, FACILITY, TODAY_ISO, TRUCKS } from "../data/mock";
+import { BLOCKED_SLOTS, CURRENT_TIME_MINUTES, DOCKS, FACILITY, TODAY_ISO, TRUCKS } from "../data/mock";
 import type { Assignment, BlockedSlot, Dock, Truck } from "../data/types";
 import { autoAssignAll } from "../lib/autoAssign";
 import { cn } from "../lib/cn";
@@ -20,6 +20,8 @@ type DragState =
       startY: number;
       offsetX: number;
       offsetY: number;
+      width: number;
+      height: number;
       fromAssignment: Assignment;
     }
   | {
@@ -29,12 +31,14 @@ type DragState =
       y: number;
       offsetX: number;
       offsetY: number;
+      width: number;
+      height: number;
       fromAssignment: Assignment;
     };
 
 const DRAG_THRESHOLD = 5; // pixels
 
-export function DockManagementV2() {
+export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) {
   const [dateIso, setDateIso] = useState<string>(TODAY_ISO);
   const [zoom, setZoom] = useState<"compact" | "expanded">("compact");
   const [blockingMode, setBlockingMode] = useState(false);
@@ -54,6 +58,13 @@ export function DockManagementV2() {
   const [hoverSlot, setHoverSlot] = useState<{ dockId: string; startMinutes: number } | null>(null);
   const [menu, setMenu] = useState<{ truckId: string; anchor: DOMRect } | null>(null);
   const [detailTruckId, setDetailTruckId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<number | null>(null);
+  const showToast = useCallback((message: string) => {
+    setToast(message);
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 3000);
+  }, []);
 
   const gridRef = useRef<ScheduleGridHandle>(null);
   const trucksById = useMemo<Record<string, Truck>>(
@@ -92,6 +103,22 @@ export function DockManagementV2() {
       ),
     [autoForDate, manualOverrides],
   );
+  const isTruckDeparted = useCallback(
+    (truckId: string) => {
+      const t = trucksById[truckId];
+      if (!t) return false;
+      if (t.status === "departed") return true;
+      if (t.dateIso < TODAY_ISO) return true;
+      if (t.dateIso === TODAY_ISO) {
+        const a = assignments.find((x) => x.truckId === truckId);
+        const start = a?.startMinutes ?? t.apptMinutes;
+        return start + t.durationMinutes <= CURRENT_TIME_MINUTES;
+      }
+      return false;
+    },
+    [trucksById, assignments],
+  );
+
   // Helper that mirrors the old setAssignments API on the same shape
   const setAssignments = useCallback(
     (updater: Assignment[] | ((prev: Assignment[]) => Assignment[])) => {
@@ -172,12 +199,16 @@ export function DockManagementV2() {
     (truckId: string, e: React.PointerEvent) => {
       // Don't initiate drag from the ... menu button — that's a click-only target.
       const target = e.target as HTMLElement;
-      if (target.closest('button[aria-label="More options"]')) return;
+      if (target.closest('button[aria-label="More options"], button[aria-label="Additional info"]')) return;
 
       const cardEl = (e.currentTarget as HTMLElement).closest(".group") as HTMLElement | null;
       const rect = (cardEl ?? (e.currentTarget as HTMLElement)).getBoundingClientRect();
       const fromAssignment = assignments.find((a) => a.truckId === truckId);
       if (!fromAssignment) return;
+      if (isTruckDeparted(truckId)) {
+        showToast("This truck has already departed and can't be rearranged");
+        return;
+      }
       // Start in 'pending' — we don't commit to a drag until pointer moves past threshold.
       // This lets simple clicks (e.g. on the underline to expand) still work.
       setDrag({
@@ -187,10 +218,12 @@ export function DockManagementV2() {
         startY: e.clientY,
         offsetX: e.clientX - rect.left,
         offsetY: e.clientY - rect.top,
+        width: rect.width,
+        height: rect.height,
         fromAssignment,
       });
     },
-    [assignments],
+    [assignments, isTruckDeparted, showToast],
   );
 
   useEffect(() => {
@@ -211,6 +244,8 @@ export function DockManagementV2() {
             y: e.clientY,
             offsetX: d.offsetX,
             offsetY: d.offsetY,
+            width: d.width,
+            height: d.height,
             fromAssignment: d.fromAssignment,
           };
         }
@@ -295,7 +330,13 @@ export function DockManagementV2() {
         dateIso={dateIso}
         onPrevDay={() => setDateIso(shiftDate(dateIso, -1))}
         onNextDay={() => setDateIso(shiftDate(dateIso, 1))}
-        onToday={() => setDateIso(TODAY_ISO)}
+        onToday={() => {
+          if (dateIso === TODAY_ISO) {
+            gridRef.current?.scrollToCurrentTime();
+          } else {
+            setDateIso(TODAY_ISO);
+          }
+        }}
         onSetDate={setDateIso}
         zoom={zoom}
         onZoomIn={() => setZoom("expanded")}
@@ -318,6 +359,9 @@ export function DockManagementV2() {
         density={zoom}
         blockingMode={blockingMode}
         showCurrentTime={dateIso === TODAY_ISO}
+        isPastDate={dateIso < TODAY_ISO}
+        onBlockedActionAttempt={showToast}
+        isDepartedTruckId={isTruckDeparted}
         onCreateBlock={(d) =>
           setBlocked((prev) => [
             ...prev,
@@ -336,9 +380,15 @@ export function DockManagementV2() {
         hoverSlot={hoverSlot}
         variantByTruckId={variantByTruckId}
         showMenu
+        menuVariantByTruckId={(truckId) => (isManuallyOverridden(truckId) ? "more" : "info")}
         onMenuOpen={(truckId, anchor) => {
           // Treat the menu trigger like a click on the card itself: make it sticky-expanded.
           setExpandedIds(new Set([truckId]));
+          // Only one action available (Additional info) → skip the popover and open the side sheet directly.
+          if (!isManuallyOverridden(truckId)) {
+            setDetailTruckId(truckId);
+            return;
+          }
           setMenu({ truckId, anchor });
         }}
         onExpand={(truckId) => setExpandedIds(new Set([truckId]))}
@@ -356,7 +406,17 @@ export function DockManagementV2() {
         onHoverCollapse={(truckId) =>
           setHoverExpandedId((id) => (id === truckId ? null : id))
         }
+        treatment={treatment}
         />
+
+        {/* Toast — sits just above the legend pill */}
+        {toast && (
+          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+            <div className="bg-ink text-white text-body-md rounded-button shadow-drag px-4 py-2.5">
+              {toast}
+            </div>
+          </div>
+        )}
 
         {/* Centered floating legend pill */}
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
@@ -367,8 +427,9 @@ export function DockManagementV2() {
               </p>
             ) : (
               <>
-                <LegendSwatch color="#00832D" label="Automatically assigned" />
-                <LegendSwatch color="#1537C7" label="Manually overridden" />
+                <LegendSwatch color="#00832D" label="Departed" />
+                <LegendSwatch color="#1537C7" label="Auto assigned" />
+                <LegendSwatch color="#6B21A8" label="Manually assigned" />
                 <LegendSwatch color="#949494" label="Blocked time" />
               </>
             )}
@@ -382,12 +443,12 @@ export function DockManagementV2() {
           style={{
             left: drag.x - drag.offsetX,
             top: drag.y - drag.offsetY,
-            width: 300,
-            height: 132,
+            width: drag.width,
+            height: drag.height,
             transform: "rotate(-1deg)",
           }}
         >
-          <TruckCard truck={draggingTruck} variant="scheduled" source="manual" />
+          <TruckCard truck={draggingTruck} variant="scheduled" source="manual" treatment={treatment} />
         </div>
       )}
 

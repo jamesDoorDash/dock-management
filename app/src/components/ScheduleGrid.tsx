@@ -1,8 +1,8 @@
 import { useRef, useImperativeHandle, forwardRef, useState, useEffect } from "react";
 import { Trash2 } from "lucide-react";
 import type { Assignment, BlockedSlot, Dock, Truck } from "../data/types";
-import { TruckCard } from "./TruckCard";
-import { SCHEDULE_START_MINUTES, SCHEDULE_END_MINUTES } from "../data/mock";
+import { TruckCard, type Treatment } from "./TruckCard";
+import { CURRENT_TIME_MINUTES, SCHEDULE_START_MINUTES, SCHEDULE_END_MINUTES } from "../data/mock";
 import { formatTime, formatTimeShort } from "../lib/time";
 import { cn } from "../lib/cn";
 
@@ -14,17 +14,18 @@ const DENSITY = {
   compact: { HOUR_WIDTH: 165, ROW_HEIGHT: 40 },
 } as const;
 
-/** Hardcoded "now" for the prototype — 2:15 PM. */
-const CURRENT_TIME_MINUTES = 14 * 60 + 15;
-
 /** Extra bottom space so the last dock row clears the floating legend pill with breathing room. */
 const SCROLL_BOTTOM_PADDING = 96; // 80 for legend area + 16px breathing room
+/** No extra whitespace past the last hour — chart ends at 5 AM tomorrow. */
+const SCROLL_RIGHT_PADDING = 0;
 
 export const GRID_CONSTANTS = { DOCK_COL_WIDTH, HEADER_HEIGHT, DENSITY };
 
 export interface ScheduleGridHandle {
   /** Hit-test a viewport (clientX, clientY) point. Returns the dock + start minutes for the slot it falls into, or null. */
   hitTest: (clientX: number, clientY: number) => { dockId: string; startMinutes: number } | null;
+  /** Scroll horizontally so the hour boundary before "now" sits at the left edge. */
+  scrollToCurrentTime: () => void;
 }
 
 interface Props {
@@ -44,10 +45,16 @@ interface Props {
   showMenu?: boolean;
   /** Click handler for the ... menu trigger. */
   onMenuOpen?: (truckId: string, anchor: DOMRect) => void;
+  /** Per-truck menu trigger icon. Defaults to "more" (triple-dot). */
+  menuVariantByTruckId?: (truckId: string) => "more" | "info";
   /** Compact-card click-to-expand handler. */
   onExpand?: (truckId: string) => void;
   /** Inline-expanded card click-to-collapse handler (only fired on breakout-expanded cards). */
   onCollapse?: (truckId: string) => void;
+  /** Mouse enters a compact card — hover-expand it. */
+  onHoverExpand?: (truckId: string) => void;
+  /** Mouse leaves a card — clear hover-expand (sticky click-expanded cards stay open). */
+  onHoverCollapse?: (truckId: string) => void;
   /** Drives row/hour size. Defaults to expanded. */
   density?: "expanded" | "compact";
   /** Called when user click-and-drags on empty grid to create a blocked-time slot. */
@@ -62,6 +69,14 @@ interface Props {
   blockingMode?: boolean;
   /** Show the current-time line + triangle. Defaults to true. */
   showCurrentTime?: boolean;
+  /** True when the viewed date is entirely in the past (block creation is disallowed). */
+  isPastDate?: boolean;
+  /** Fired when the user attempts an action that's not allowed (e.g. block in past). */
+  onBlockedActionAttempt?: (message: string) => void;
+  /** Predicate — truck has already departed (or its window is past) and can't be rearranged. */
+  isDepartedTruckId?: (truckId: string) => boolean;
+  /** Visual treatment for appointment cards (temporary V4–V14 prototypes). */
+  treatment?: Treatment;
 }
 
 function BlockedCard({
@@ -153,8 +168,11 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
     variantByTruckId,
     showMenu,
     onMenuOpen,
+    menuVariantByTruckId,
     onExpand,
     onCollapse,
+    onHoverExpand,
+    onHoverCollapse,
     density = "expanded",
     onCreateBlock,
     onDeleteBlock,
@@ -162,6 +180,10 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
     onResizeBlock,
     blockingMode = false,
     showCurrentTime = true,
+    isPastDate = false,
+    onBlockedActionAttempt,
+    isDepartedTruckId,
+    treatment,
   },
   ref,
 ) {
@@ -171,6 +193,18 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
   const totalHeight = docks.length * ROW_HEIGHT;
   const gridRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const proxyScrollbarRef = useRef<HTMLDivElement>(null);
+  // Measure the scroller height so we can decide whether the bottom spacer is needed
+  const [scrollerHeight, setScrollerHeight] = useState(0);
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const update = () => setScrollerHeight(el.clientHeight);
+    update();
+    const obs = new ResizeObserver(update);
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   // Drag-to-create blocked-time slot
   const [blockDraft, setBlockDraft] = useState<{
@@ -279,6 +313,11 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
     const dockId = dockAtY(e.clientY);
     const start = snapXToMinute(e.clientX, "floor");
     if (!dockId || start == null) return;
+    // Can't add a blocked time in the past.
+    if (isPastDate || (showCurrentTime && start < CURRENT_TIME_MINUTES)) {
+      onBlockedActionAttempt?.("You can't block time in the past");
+      return;
+    }
     setBlockDraft({ dockId, startMin: start, endMin: start + 15 });
     e.preventDefault();
   };
@@ -311,7 +350,30 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blockDraft]);
 
+  const scrollToCurrentTime = () => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const hoursSinceStart = Math.floor(
+      (CURRENT_TIME_MINUTES - SCHEDULE_START_MINUTES) / 60,
+    );
+    scroller.scrollLeft = hoursSinceStart * HOUR_WIDTH;
+  };
+
+  // On mount / when switching to a day with a current-time indicator (or zoom changes),
+  // scroll horizontally so the hour boundary *before* "now" sits at the left edge of the
+  // visible chart (e.g. if now is 2:15 PM, the left edge lands on 2:00 PM).
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    if (showCurrentTime) {
+      scrollToCurrentTime();
+    } else {
+      scroller.scrollLeft = 0;
+    }
+  }, [showCurrentTime, HOUR_WIDTH]);
+
   useImperativeHandle(ref, () => ({
+    scrollToCurrentTime,
     hitTest(clientX, clientY) {
       const el = gridRef.current;
       if (!el) return null;
@@ -334,28 +396,69 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
 
   return (
     <div className="px-10 flex-1 min-h-0 flex flex-col">
-      <div className="border-t border-x border-line bg-white overflow-hidden flex-1 min-h-0 flex flex-col">
-        <div ref={scrollerRef} className="overflow-auto scrollbar-thin flex-1 min-h-0">
-          <div className="relative" style={{ width: DOCK_COL_WIDTH + totalWidth }}>
-            {/* Time header */}
+      <div className="bg-white max-h-full min-h-0 flex flex-col border border-line rounded-card overflow-hidden">
+        <div
+          ref={scrollerRef}
+          className="overflow-auto min-h-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          onScroll={(e) => {
+            const proxy = proxyScrollbarRef.current;
+            if (proxy && proxy.scrollLeft !== e.currentTarget.scrollLeft) {
+              proxy.scrollLeft = e.currentTarget.scrollLeft;
+            }
+          }}
+        >
+          <div
+            className="relative"
+            style={{ width: DOCK_COL_WIDTH + totalWidth + SCROLL_RIGHT_PADDING }}
+          >
+            {/* Time header — border-b lives on the inner children so it stops at the
+                chart's right edge instead of extending into the right whitespace. */}
             <div
-              className="sticky top-0 z-20 flex bg-surface-hovered border-b border-line"
+              className="sticky top-0 z-20 flex bg-surface-hovered"
               style={{ height: HEADER_HEIGHT }}
             >
               <div
-                className="sticky left-0 z-10 bg-surface-hovered border-r border-line"
+                className="sticky left-0 z-10 bg-surface-hovered border-r border-b border-line"
                 style={{ width: DOCK_COL_WIDTH, minWidth: DOCK_COL_WIDTH }}
               />
-              <div className="flex" style={{ width: totalWidth }}>
+              <div
+                className="relative flex border-b border-line"
+                style={{ width: totalWidth }}
+              >
                 {hours.map((m) => (
                   <div
                     key={m}
-                    className="px-5 flex items-center text-body-sm-strong text-ink border-r border-line"
+                    className="px-5 flex items-center gap-1.5 text-body-sm-strong text-ink border-r border-line whitespace-nowrap"
                     style={{ width: HOUR_WIDTH, minWidth: HOUR_WIDTH }}
                   >
-                    {formatTimeShort(m)}
+                    <span>{formatTimeShort(m)}</span>
+                    {m >= 24 * 60 && (
+                      <span className="text-body-sm text-ink-subdued font-normal">(tomorrow)</span>
+                    )}
                   </div>
                 ))}
+                {showCurrentTime &&
+                  CURRENT_TIME_MINUTES >= SCHEDULE_START_MINUTES &&
+                  CURRENT_TIME_MINUTES <= SCHEDULE_END_MINUTES && (
+                    <div
+                      className="absolute pointer-events-none -translate-x-1/2"
+                      style={{
+                        left:
+                          ((CURRENT_TIME_MINUTES - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH,
+                        top: HEADER_HEIGHT - 11,
+                      }}
+                    >
+                      <svg width="14" height="12" viewBox="0 0 14 12" fill="none">
+                        <path
+                          d="M7 11 L1.5 2 L12.5 2 Z"
+                          fill="#949494"
+                          stroke="#949494"
+                          strokeWidth="2"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </div>
+                  )}
               </div>
             </div>
 
@@ -363,13 +466,16 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
             <div className="flex">
               {/* Dock labels */}
               <div
-                className="sticky left-0 z-10 bg-white border-r border-line"
+                className="sticky left-0 z-50 bg-white border-r border-line"
                 style={{ width: DOCK_COL_WIDTH, minWidth: DOCK_COL_WIDTH }}
               >
-                {docks.map((d) => (
+                {docks.map((d, i) => (
                   <div
                     key={d.id}
-                    className="px-3 flex items-center text-body-sm-strong text-ink border-b border-line whitespace-nowrap"
+                    className={cn(
+                      "px-3 flex items-center text-body-sm-strong text-ink whitespace-nowrap",
+                      i < docks.length - 1 && "border-b border-line",
+                    )}
                     style={{ height: ROW_HEIGHT }}
                   >
                     {d.label}
@@ -389,7 +495,10 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                 {docks.map((d, i) => (
                   <div
                     key={d.id}
-                    className="absolute left-0 right-0 border-b border-line"
+                    className={cn(
+                      "absolute left-0 right-0",
+                      i < docks.length - 1 && "border-b border-line",
+                    )}
                     style={{ top: i * ROW_HEIGHT, height: ROW_HEIGHT }}
                   />
                 ))}
@@ -494,16 +603,37 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                   })()}
 
                 {/* Assigned trucks */}
-                {assignments.map((a) => {
+                {(() => {
+                  // Build layering metadata: later start time renders on top.
+                  // Ties on the same dock+startMinutes get a small x-shift so both remain visible.
+                  const sorted = [...assignments].sort(
+                    (a, b) => a.startMinutes - b.startMinutes,
+                  );
+                  const tieIndex = new Map<string, number>();
+                  const meta = new Map<string, { z: number; shiftX: number }>();
+                  sorted.forEach((a, i) => {
+                    const key = `${a.dockId}|${a.startMinutes}`;
+                    const t = tieIndex.get(key) ?? 0;
+                    tieIndex.set(key, t + 1);
+                    meta.set(a.truckId, { z: i + 1, shiftX: t * 5 });
+                  });
+                  return assignments.map((a) => {
                   const truck = trucksById[a.truckId];
                   if (!truck) return null;
                   const dockIdx = docks.findIndex((d) => d.id === a.dockId);
                   if (dockIdx < 0) return null;
-                  const left = ((a.startMinutes - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH;
+                  const m = meta.get(a.truckId) ?? { z: 1, shiftX: 0 };
+                  const left =
+                    ((a.startMinutes - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH + m.shiftX;
                   const width = (truck.durationMinutes / 60) * HOUR_WIDTH;
                   const isDragging = draggingTruckId === a.truckId;
+                  const departed = isDepartedTruckId?.(a.truckId) ?? false;
                   const v = variantByTruckId?.(a.truckId) ?? "scheduled";
-                  const source = a.source === "manual" ? "manual" : "auto";
+                  const source = departed
+                    ? "departed"
+                    : a.source === "manual"
+                      ? "manual"
+                      : "auto";
                   // When density is compact but this card is rendered as expanded, it's been
                   // inline-expanded by the user. Break out of the 40px row: dynamic height,
                   // wider min-width, z-elevated.
@@ -517,16 +647,20 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                       key={a.truckId}
                       data-truck-card
                       data-expanded-card={breakoutExpand ? "true" : undefined}
+                      onMouseEnter={() => onHoverExpand?.(a.truckId)}
+                      onMouseLeave={() => onHoverCollapse?.(a.truckId)}
                       className={cn(
                         "absolute",
                         isDragging && "opacity-40",
-                        breakoutExpand && "z-30 shadow-drag rounded-button",
+                        breakoutExpand && "shadow-drag rounded-button",
                         blockingMode && "opacity-40 pointer-events-none",
+                        departed && !isDragging && "cursor-not-allowed",
                       )}
                       style={{
                         left,
                         top: dockIdx * ROW_HEIGHT + padY,
                         width: cardWidth,
+                        zIndex: breakoutExpand ? 40 : m.z,
                         ...(breakoutExpand
                           ? {}
                           : { height: ROW_HEIGHT - padY * 2 }),
@@ -536,7 +670,9 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                         truck={truck}
                         variant={v}
                         source={source}
+                        treatment={treatment}
                         showMenu={showMenu}
+                        menuVariant={menuVariantByTruckId?.(a.truckId) ?? "more"}
                         onMenuOpen={(rect) => onMenuOpen?.(a.truckId, rect)}
                         onExpand={() => onExpand?.(a.truckId)}
                         onCollapse={breakoutExpand ? () => onCollapse?.(a.truckId) : undefined}
@@ -544,38 +680,10 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                       />
                     </div>
                   );
-                })}
+                });
+                })()}
               </div>
             </div>
-
-            {/* Current-time triangle — sits above the time header and points down to the line.
-                The line itself lives inside the grid (rendered below truck cards via DOM order). */}
-            {showCurrentTime &&
-              CURRENT_TIME_MINUTES >= SCHEDULE_START_MINUTES &&
-              CURRENT_TIME_MINUTES <= SCHEDULE_END_MINUTES && (
-                <div
-                  className="absolute z-20 pointer-events-none -translate-x-1/2"
-                  style={{
-                    left:
-                      DOCK_COL_WIDTH +
-                      ((CURRENT_TIME_MINUTES - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH,
-                    top: HEADER_HEIGHT - 9,
-                  }}
-                >
-                  <svg width="14" height="12" viewBox="0 0 14 12" fill="none">
-                    <path
-                      d="M7 11 L1.5 2 L12.5 2 Z"
-                      fill="#949494"
-                      stroke="#949494"
-                      strokeWidth="2"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </div>
-              )}
-
-            {/* Bottom scroll spacer so the last dock + ~16px clears the floating legend */}
-            <div aria-hidden style={{ height: SCROLL_BOTTOM_PADDING }} />
 
             {/* Appointment-time guide — overlays the whole chart (above the sticky header)
                 so labels and the stick aren't clipped. Rendered last so it z-stacks on top. */}
@@ -607,6 +715,18 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
             })()}
           </div>
         </div>
+      </div>
+      <div
+        ref={proxyScrollbarRef}
+        className="overflow-x-auto scrollbar-thin mt-2"
+        onScroll={(e) => {
+          const scroller = scrollerRef.current;
+          if (scroller && scroller.scrollLeft !== e.currentTarget.scrollLeft) {
+            scroller.scrollLeft = e.currentTarget.scrollLeft;
+          }
+        }}
+      >
+        <div style={{ width: DOCK_COL_WIDTH + totalWidth + SCROLL_RIGHT_PADDING, height: 1 }} />
       </div>
     </div>
   );

@@ -9,9 +9,22 @@ export const FACILITY = {
 export const TODAY_ISO = "2026-05-13";
 export const TOMORROW_ISO = "2026-05-14";
 
-/** Schedule visible window — 11 AM today through 2 AM tomorrow. */
-export const SCHEDULE_START_MINUTES = 11 * 60;
-export const SCHEDULE_END_MINUTES = 26 * 60;
+/** Schedule visible window — midnight today through 5 AM tomorrow (29 hours). */
+export const SCHEDULE_START_MINUTES = 0;
+export const SCHEDULE_END_MINUTES = 29 * 60;
+
+/**
+ * Hardcoded "now" for the prototype — 2:15 PM today. Used to drive the
+ * current-time indicator on the chart and to decide which trucks are still
+ * "future" (and therefore use default durations).
+ */
+export const CURRENT_TIME_MINUTES = 14 * 60 + 15;
+
+/** Default dock occupation when we don't have a real departure yet. */
+const DEFAULT_DURATION = {
+  pallet: 30, // 30 min
+  floor: 90, // 1 h 30 min
+} as const;
 
 /** Deterministic pseudo-uuid for prototype: 8-4-4-4-12 hex pattern seeded by index. */
 function mockUuid(seed: number): string {
@@ -23,7 +36,7 @@ function mockUuid(seed: number): string {
   return `${block(8, 0)}-${block(4, 8)}-${block(4, 12)}-${block(4, 16)}-${block(12, 20)}`;
 }
 
-export const DOCKS: Dock[] = Array.from({ length: 24 }, (_, i) => ({
+export const DOCKS: Dock[] = Array.from({ length: 15 }, (_, i) => ({
   id: `dock-${i + 1}`,
   label: `Dock ${i + 1}`,
   uuid: mockUuid(i + 1),
@@ -37,7 +50,7 @@ const t = (h: number, m: number = 0) => h * 60 + m;
  * STORD-GA-1 grouped row is expanded to its two children (66F0 + 2F0B); the parent
  * aggregate is not represented here.
  */
-export const TRUCKS: Truck[] = [
+const RAW_TRUCKS: Truck[] = [
   // === OUTBOUND returns (early afternoon) ===
   {
     id: "tr-petco-ret",
@@ -601,6 +614,24 @@ export const TRUCKS: Truck[] = [
     status: "scheduled",
   },
 ];
+
+/**
+ * Trucks for the schedule.
+ *
+ * Past trucks (those whose appointment time is before `CURRENT_TIME_MINUTES`)
+ * keep their literal `durationMinutes` — that's their actual arrival → departure
+ * window pulled from the source data.
+ *
+ * Future trucks don't have a real departure yet, so we override with default
+ * dock occupation by load type: palletized = 30 min, floor-loaded = 90 min.
+ * Tomorrow's trucks are always future regardless of clock time.
+ */
+export const TRUCKS: Truck[] = RAW_TRUCKS.map((t) => {
+  const isFuture =
+    t.dateIso !== TODAY_ISO || t.apptMinutes >= CURRENT_TIME_MINUTES;
+  if (!isFuture) return t;
+  return { ...t, durationMinutes: DEFAULT_DURATION[t.loadType] };
+});
 
 /** V1 pre-placed assignments — the trucks shown as "In progress" with a dock in the screenshot. */
 export const ASSIGNMENTS: Assignment[] = [
