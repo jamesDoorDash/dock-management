@@ -144,7 +144,7 @@ export function TruckDetailSheet({ open, truck, dockLabel, startMinutes, onClose
               onClick={() => setDetailsOpen((v) => !v)}
               className="w-full flex items-center gap-3"
             >
-              <h2 className="text-[22px] font-bold text-[#111111]">Details</h2>
+              <h2 className="text-title-lg text-[#111111]">Details</h2>
               <span
                 className="text-[12px] font-medium px-2.5 py-1 rounded-full"
                 style={{ background: pill.bg, color: pill.text }}
@@ -183,7 +183,7 @@ export function TruckDetailSheet({ open, truck, dockLabel, startMinutes, onClose
                     </div>
                     <div className="text-[#6b7280]">Updated 2 hours ago</div>
                   </div>
-                  <div className="absolute bottom-2 left-2 text-[10px] text-[#6b7280] bg-white/80 px-1.5 py-0.5 rounded">© mapbox</div>
+                  <div className="absolute bottom-2 left-2 text-label-xs text-[#6b7280] bg-white/80 px-1.5 py-0.5 rounded">© mapbox</div>
                 </div>
 
                 {/* Full Shipment ID */}
@@ -239,7 +239,7 @@ export function TruckDetailSheet({ open, truck, dockLabel, startMinutes, onClose
               onClick={() => setMerchantsOpen((v) => !v)}
               className="w-full flex items-center"
             >
-              <h2 className="text-[22px] font-bold text-[#111111]">Merchants</h2>
+              <h2 className="text-title-lg text-[#111111]">Merchants</h2>
               <ChevronUp
                 className={`ml-auto size-5 text-[#6b7280] transition-transform ${merchantsOpen ? "" : "rotate-180"}`}
               />
@@ -283,7 +283,7 @@ export function TruckDetailSheet({ open, truck, dockLabel, startMinutes, onClose
               onClick={() => setParcelsOpen((v) => !v)}
               className="w-full flex items-center"
             >
-              <h2 className="text-[22px] font-bold text-[#111111]">Parcels</h2>
+              <h2 className="text-title-lg text-[#111111]">Parcels</h2>
               <ChevronUp
                 className={`ml-auto size-5 text-[#6b7280] transition-transform ${parcelsOpen ? "" : "rotate-180"}`}
               />

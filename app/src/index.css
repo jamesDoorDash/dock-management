@@ -40,3 +40,29 @@ body {
   cursor: grabbing !important;
   user-select: none;
 }
+
+/* ---------------------------------------------------------------------------
+ * Typefix (V34) — scopes the page to Prism Foundations type values.
+ *   - Snaps off-grid ad-hoc sizes (11px, 22px) to the nearest Prism base.
+ *   - Corrects line-heights/weights on existing project tokens to match
+ *     Prism's body/label scale (lh 24/22/20, weights 400/700).
+ * Toggled via the `typefix` class on the root wrapper in App.tsx.
+ * --------------------------------------------------------------------------- */
+.typefix .text-\[10px\] { font-size: 10px; line-height: 18px; }
+.typefix .text-\[11px\] { font-size: 12px; line-height: 20px; }
+.typefix .text-\[12px\] { font-size: 12px; line-height: 20px; }
+.typefix .text-\[14px\] { font-size: 14px; line-height: 22px; }
+.typefix .text-\[16px\] { font-size: 16px; line-height: 24px; }
+.typefix .text-\[22px\] { font-size: 20px; line-height: 24px; }
+.typefix .text-\[24px\] { font-size: 24px; line-height: 28px; }
+
+.typefix .text-body-lg,
+.typefix .text-body-lg-strong { line-height: 24px; }
+.typefix .text-body-lg { font-weight: 400; }
+
+.typefix .text-body-md,
+.typefix .text-body-md-strong { line-height: 22px; }
+
+.typefix .text-body-sm,
+.typefix .text-body-sm-strong { line-height: 20px; }
+.typefix .text-body-sm-strong { font-weight: 700; }

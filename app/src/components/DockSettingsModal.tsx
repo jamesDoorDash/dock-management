@@ -413,17 +413,20 @@ function ManageDocksTab({
       <div
         className={cn(
           "flex items-center justify-between py-3 sticky top-0 bg-white z-10 -mx-2 px-2",
-          addingDock && "opacity-40 pointer-events-none",
+          addingDock && "pointer-events-none",
         )}
       >
-        <p className="text-body-md-strong text-ink">
+        <p className={cn("text-body-md-strong text-ink", addingDock && "opacity-40")}>
           {rearranging ? "Drag to rearrange dock order" : `${activeCount} active docks`}
         </p>
         {rearranging ? (
           <button
             type="button"
             onClick={() => setRearranging(false)}
-            className="h-9 px-3 rounded-button bg-ink text-body-sm-strong text-white hover:opacity-90"
+            className={cn(
+              "h-9 px-3 rounded-button bg-ink text-body-sm-strong text-white hover:opacity-90",
+              addingDock && "opacity-40",
+            )}
           >
             Done rearranging
           </button>
@@ -431,7 +434,10 @@ function ManageDocksTab({
           <button
             type="button"
             onClick={() => setRearranging(true)}
-            className="h-9 px-3 rounded-button border border-line-strong bg-white text-body-sm-strong text-ink hover:bg-surface-hovered inline-flex items-center gap-1.5"
+            className={cn(
+              "h-9 px-3 rounded-button border border-line-strong bg-white text-body-sm-strong text-ink hover:bg-surface-hovered inline-flex items-center gap-1.5",
+              addingDock && "opacity-40",
+            )}
           >
             <ListOrdered className="size-4" />
             Rearrange docks

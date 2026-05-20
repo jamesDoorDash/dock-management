@@ -2,13 +2,15 @@ import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import { RotateCw, Info } from "lucide-react";
 import { PageHeaderV2 } from "../components/PageHeaderV2";
 import { ScheduleGrid, type ScheduleGridHandle } from "../components/ScheduleGrid";
-import { TruckCard, type Treatment } from "../components/TruckCard";
+import { TruckCard, STATUS_COLORS, type Treatment } from "../components/TruckCard";
 import { PopoverMenu } from "../components/PopoverMenu";
 import { DockSettingsModal } from "../components/DockSettingsModal";
 import { TruckDetailSheet } from "../components/TruckDetailSheet";
+import { ErrorModal } from "../components/ErrorModal";
 import { BLOCKED_SLOTS, CURRENT_TIME_MINUTES, DOCKS, FACILITY, TODAY_ISO, TRUCKS } from "../data/mock";
 import type { Assignment, BlockedSlot, Dock, Truck } from "../data/types";
-import { autoAssignAll } from "../lib/autoAssign";
+import { autoAssignAll, visualOccupancy } from "../lib/autoAssign";
+import { getBarRange, synthLateMinutes, synthStayOvertimeMinutes } from "../lib/time";
 import { cn } from "../lib/cn";
 
 type DragState =
@@ -38,13 +40,19 @@ type DragState =
 
 const DRAG_THRESHOLD = 5; // pixels
 
-export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) {
+export function DockManagementV3({
+  treatment,
+  typefix = false,
+  declutter = false,
+}: { treatment?: Treatment; typefix?: boolean; declutter?: boolean } = {}) {
   const [dateIso, setDateIso] = useState<string>(TODAY_ISO);
   const [zoom, setZoom] = useState<"compact" | "expanded">("compact");
   const [blockingMode, setBlockingMode] = useState(false);
   const [dockSettingsOpen, setDockSettingsOpen] = useState(false);
   const [docks, setDocks] = useState<Dock[]>(DOCKS);
   const [priorityOrder, setPriorityOrder] = useState<string[]>(() => DOCKS.map((d) => d.id));
+  /** Ordered list of on-hold row IDs. The last entry is always the empty "On hold" drop target. */
+  const [holdSlotIds, setHoldSlotIds] = useState<string[]>(["hold-1"]);
   const [receivingHours, setReceivingHours] = useState(FACILITY.receivingHours);
   const [shippingHours, setShippingHours] = useState(FACILITY.shippingHours);
   const [blocked, setBlocked] = useState<BlockedSlot[]>(BLOCKED_SLOTS);
@@ -58,6 +66,29 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
   const [hoverSlot, setHoverSlot] = useState<{ dockId: string; startMinutes: number } | null>(null);
   const [menu, setMenu] = useState<{ truckId: string; anchor: DOMRect } | null>(null);
   const [detailTruckId, setDetailTruckId] = useState<string | null>(null);
+  /** Set when a drop on an in-progress truck needs user confirmation before applying. */
+  const [pendingMove, setPendingMove] = useState<
+    | { truckId: string; fromDockId: string; toDockId: string }
+    | null
+  >(null);
+  /** Set when the drop position collides with another scheduled truck. */
+  const [pendingCollision, setPendingCollision] = useState<
+    | { truckId: string; toDockId: string; colliderTruckId: string }
+    | null
+  >(null);
+  /** Set when a new blocked-time slot intersects with a scheduled truck. */
+  const [pendingBlock, setPendingBlock] = useState<
+    | {
+        draft: { dockId: string; startMinutes: number; durationMinutes: number };
+        colliderTruckId: string;
+      }
+    | null
+  >(null);
+  /** Shown when the user drops an in-progress truck onto an on-hold slot — acknowledgement only. */
+  const [inProgressHoldError, setInProgressHoldError] = useState<
+    | { truckId: string }
+    | null
+  >(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
   const showToast = useCallback((message: string) => {
@@ -76,6 +107,21 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
   const trucksForDate = useMemo(() => TRUCKS.filter((t) => t.dateIso === dateIso), [dateIso]);
   // Display order — schedule left column matches the canonical dock order from Manage docks
   const activeDocks = useMemo(() => docks.filter((d) => d.active), [docks]);
+  // Virtual "On hold" rows rendered below the real docks. The last slot is the
+  // always-empty drop target labeled "On hold"; the rest are numbered "On hold N".
+  const holdDocks = useMemo<Dock[]>(
+    () =>
+      holdSlotIds.map((id, i) => ({
+        id,
+        label: holdSlotIds.length === 1 ? "On hold" : `On hold ${i + 1}`,
+        uuid: id,
+        active: true,
+      })),
+    [holdSlotIds],
+  );
+  // Docks + hold rows together — what the schedule grid actually renders.
+  const displayDocks = useMemo(() => [...activeDocks, ...holdDocks], [activeDocks, holdDocks]);
+  const holdEmptyId = holdSlotIds[holdSlotIds.length - 1];
   // Auto-assign uses priority order to pick the first available dock — drives WHICH dock a truck lands in
   const priorityActiveDocks = useMemo(() => {
     const byId = new Map(activeDocks.map((d) => [d.id, d]));
@@ -103,6 +149,45 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
       ),
     [autoForDate, manualOverrides],
   );
+  /**
+   * "In progress" = truck has actually arrived (per the synth model) and is
+   * being loaded/unloaded right now. Overdue ETAs (appt is past but the truck
+   * still hasn't shown) are NOT in-progress — they're just late showing up.
+   */
+  const isTruckInProgress = useCallback(
+    (truckId: string) => {
+      const t = trucksById[truckId];
+      if (!t) return false;
+      if (t.status === "departed") return false;
+      if (t.dateIso !== TODAY_ISO) return false;
+      const a = assignments.find((x) => x.truckId === truckId);
+      const start = a?.startMinutes ?? t.apptMinutes;
+      const arrivalDelay = synthLateMinutes(truckId);
+      const stayOvertime = synthStayOvertimeMinutes(truckId);
+      const actualArrival = start + arrivalDelay;
+      const actualDepart = actualArrival + t.durationMinutes + stayOvertime;
+      return actualArrival <= CURRENT_TIME_MINUTES && CURRENT_TIME_MINUTES < actualDepart;
+    },
+    [trucksById, assignments],
+  );
+
+  /**
+   * Time to lock a card to when it's dragged. For an arrived truck this is
+   * its actual arrival time (so the card visually stays at the moment the
+   * truck got there); for any other status, the scheduled appointment time.
+   */
+  const lockedStartFor = useCallback(
+    (truckId: string) => {
+      const t = trucksById[truckId];
+      if (!t) return 0;
+      if (isTruckInProgress(truckId)) {
+        return t.apptMinutes + synthLateMinutes(truckId);
+      }
+      return t.apptMinutes;
+    },
+    [trucksById, isTruckInProgress],
+  );
+
   const isTruckDeparted = useCallback(
     (truckId: string) => {
       const t = trucksById[truckId];
@@ -112,7 +197,13 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
       if (t.dateIso === TODAY_ISO) {
         const a = assignments.find((x) => x.truckId === truckId);
         const start = a?.startMinutes ?? t.apptMinutes;
-        return start + t.durationMinutes <= CURRENT_TIME_MINUTES;
+        // Depart status uses ACTUAL depart (arrival delay + stay overtime),
+        // not scheduled depart — otherwise a truck still being unloaded after
+        // its scheduled slot would be misclassified as departed and its bar
+        // would visually cross the current-time line.
+        const actualDepart =
+          start + synthLateMinutes(truckId) + t.durationMinutes + synthStayOvertimeMinutes(truckId);
+        return actualDepart <= CURRENT_TIME_MINUTES;
       }
       return false;
     },
@@ -148,6 +239,25 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
 
   // Reset inline-expanded set when global zoom changes
   useEffect(() => setExpandedIds(new Set()), [zoom]);
+
+  // Compact on-hold rows: drop any empty hold slot that isn't the trailing
+  // drop target so numbering stays contiguous.
+  useEffect(() => {
+    setHoldSlotIds((prev) => {
+      if (prev.length <= 1) return prev;
+      const used = new Set(
+        assignments
+          .map((a) => a.dockId)
+          .filter((id) => prev.includes(id)),
+      );
+      const trailing = prev[prev.length - 1];
+      const next = prev.filter((id, i) => i === prev.length - 1 || used.has(id));
+      if (next.length === prev.length) return prev;
+      // Guarantee the trailing empty drop target is preserved.
+      if (next[next.length - 1] !== trailing) next.push(trailing);
+      return next;
+    });
+  }, [assignments]);
 
   // Defensive: onMouseLeave can be missed when the pointer flies out of the
   // window or onto an overlay. Once a card is hover-expanded, watch the
@@ -226,6 +336,123 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
     [assignments, isTruckDeparted, showToast],
   );
 
+  const applyMove = useCallback(
+    (truckId: string, toDockId: string) => {
+      const truck = trucksById[truckId];
+      if (!truck) return;
+      // Dropping into the trailing empty hold slot "consumes" it — it stays
+      // with the same id (now occupied) and we append a new empty slot below.
+      if (toDockId === holdEmptyId) {
+        setHoldSlotIds((prev) => [...prev, `hold-${prev.length + 1}`]);
+      }
+      // Store the scheduled appt time; getBarRange shifts the visual bar to
+      // actualArrival for arrived trucks, so the card stays put across docks
+      // without us having to overload the assignment's stored start time.
+      setAssignments((prev) => {
+        const without = prev.filter((a) => a.truckId !== truckId);
+        return [
+          ...without,
+          { truckId, dockId: toDockId, startMinutes: truck.apptMinutes, source: "manual" },
+        ];
+      });
+    },
+    [trucksById, setAssignments, holdEmptyId],
+  );
+
+  /**
+   * Returns the truckId of an existing assignment on `toDockId` whose visual
+   * range collides with the dragged truck, or null if there's no collision.
+   */
+  const findCollider = useCallback(
+    (truckId: string, toDockId: string): string | null => {
+      const truck = trucksById[truckId];
+      if (!truck) return null;
+      // Compare actually-rendered bar footprints, not visualOccupancy's union
+      // of scheduled+actual spans. A future-ETA truck with synth stay-overtime
+      // would otherwise report a tail past its visible bar end and cause a
+      // false collision when dropping another truck flush behind it.
+      const aBar = getBarRange(truck, truck.apptMinutes, CURRENT_TIME_MINUTES);
+      const aStart = aBar.startMin;
+      const aEnd = aBar.startMin + aBar.widthMin;
+      for (const a of assignments) {
+        if (a.truckId === truckId) continue;
+        if (a.dockId !== toDockId) continue;
+        const other = trucksById[a.truckId];
+        if (!other) continue;
+        // Departed trucks have freed the dock — their bar is gone, so they
+        // shouldn't trigger a "dock already has a truck" collision.
+        if (isTruckDeparted(a.truckId)) continue;
+        const bBar = getBarRange(other, a.startMinutes, CURRENT_TIME_MINUTES);
+        const bStart = bBar.startMin;
+        const bEnd = bBar.startMin + bBar.widthMin;
+        if (aStart < bEnd && aEnd > bStart) return a.truckId;
+      }
+      return null;
+    },
+    [trucksById, assignments, isTruckDeparted],
+  );
+
+  /** Find the first active dock (excluding `excludeDockId`) where `truckId`'s
+   *  visual range doesn't collide with any current assignment or blocked slot. */
+  const findOpenDockForTruck = useCallback(
+    (truckId: string, excludeDockId: string): string | null => {
+      const truck = trucksById[truckId];
+      if (!truck) return null;
+      const aBar = getBarRange(truck, truck.apptMinutes, CURRENT_TIME_MINUTES);
+      const start = aBar.startMin;
+      const end = aBar.startMin + aBar.widthMin;
+      const overlaps = (s: number, e: number) => start < e && end > s;
+      for (const d of priorityActiveDocks) {
+        if (d.id === excludeDockId) continue;
+        const dockBusy =
+          assignments.some((a) => {
+            if (a.truckId === truckId) return false;
+            if (a.dockId !== d.id) return false;
+            const other = trucksById[a.truckId];
+            if (!other) return false;
+            if (isTruckDeparted(a.truckId)) return false;
+            const bBar = getBarRange(other, a.startMinutes, CURRENT_TIME_MINUTES);
+            return overlaps(bBar.startMin, bBar.startMin + bBar.widthMin);
+          }) ||
+          blocked.some(
+            (b) => b.dockId === d.id && overlaps(b.startMinutes, b.startMinutes + b.durationMinutes),
+          );
+        if (!dockBusy) return d.id;
+      }
+      return null;
+    },
+    [trucksById, assignments, priorityActiveDocks, blocked, isTruckDeparted],
+  );
+
+  /** Apply a move and, if a collider was identified, relocate that truck. */
+  const applyMoveWithDisplacement = useCallback(
+    (truckId: string, toDockId: string, colliderTruckId: string) => {
+      const truck = trucksById[truckId];
+      if (!truck) return;
+      const colliderTruck = trucksById[colliderTruckId];
+      const newDockForCollider = findOpenDockForTruck(colliderTruckId, toDockId);
+      setAssignments((prev) => {
+        const without = prev.filter(
+          (a) => a.truckId !== truckId && a.truckId !== colliderTruckId,
+        );
+        const next: Assignment[] = [
+          ...without,
+          { truckId, dockId: toDockId, startMinutes: truck.apptMinutes, source: "manual" },
+        ];
+        if (colliderTruck && newDockForCollider) {
+          next.push({
+            truckId: colliderTruckId,
+            dockId: newDockForCollider,
+            startMinutes: colliderTruck.apptMinutes,
+            source: "manual",
+          });
+        }
+        return next;
+      });
+    },
+    [trucksById, setAssignments, findOpenDockForTruck],
+  );
+
   useEffect(() => {
     if (drag.kind === "idle") return;
 
@@ -263,7 +490,9 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
           Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) >= DRAG_THRESHOLD);
       if (pastThreshold && truck) {
         const hit = gridRef.current?.hitTest(e.clientX, e.clientY);
-        setHoverSlot(hit ? { dockId: hit.dockId, startMinutes: truck.apptMinutes } : null);
+        setHoverSlot(
+          hit ? { dockId: hit.dockId, startMinutes: lockedStartFor(drag.truckId) } : null,
+        );
       }
     };
 
@@ -291,13 +520,46 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
       const truck = trucksById[current.truckId];
       if (!hit || !truck) return;
 
-      setAssignments((prev) => {
-        const without = prev.filter((a) => a.truckId !== current.truckId);
-        return [
-          ...without,
-          { truckId: current.truckId, dockId: hit.dockId, startMinutes: truck.apptMinutes, source: "manual" },
-        ];
-      });
+      const fromDockId =
+        current.kind === "active" || current.kind === "pending"
+          ? current.fromAssignment.dockId
+          : null;
+      const dockChanged = fromDockId !== null && fromDockId !== hit.dockId;
+
+      // An in-progress truck can't be moved to an on-hold slot.
+      if (
+        dockChanged &&
+        isTruckInProgress(current.truckId) &&
+        holdSlotIds.includes(hit.dockId)
+      ) {
+        setInProgressHoldError({ truckId: current.truckId });
+        return;
+      }
+
+      // If a truck is currently being loaded/unloaded and the user moves it to
+      // a different dock, confirm before reassigning.
+      if (dockChanged && isTruckInProgress(current.truckId)) {
+        setPendingMove({
+          truckId: current.truckId,
+          fromDockId: fromDockId!,
+          toDockId: hit.dockId,
+        });
+        return;
+      }
+
+      // If the drop position collides with another scheduled truck, confirm
+      // before applying — the other truck will be moved to make room.
+      const colliderId = findCollider(current.truckId, hit.dockId);
+      if (colliderId) {
+        setPendingCollision({
+          truckId: current.truckId,
+          toDockId: hit.dockId,
+          colliderTruckId: colliderId,
+        });
+        return;
+      }
+
+      applyMove(current.truckId, hit.dockId);
     };
 
     window.addEventListener("pointermove", onMove);
@@ -323,6 +585,23 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
   };
 
   const draggingTruck = drag.kind === "active" ? trucksById[drag.truckId] : null;
+  const draggingSource: "auto" | "manual" | "departed" = (() => {
+    if (drag.kind !== "active") return "auto";
+    if (isTruckDeparted(drag.truckId)) return "departed";
+    const a = assignments.find((x) => x.truckId === drag.truckId);
+    return a?.source === "manual" ? "manual" : "auto";
+  })();
+  const draggingBarStatus: "scheduled" | "in_progress" | "departed" = (() => {
+    if (!draggingTruck) return "scheduled";
+    const a = assignments.find((x) => x.truckId === draggingTruck.id);
+    if (!a) return "scheduled";
+    const departed = isTruckDeparted(draggingTruck.id);
+    const bar = getBarRange(draggingTruck, a.startMinutes, CURRENT_TIME_MINUTES, departed);
+    const barEnd = bar.startMin + bar.widthMin;
+    if (barEnd < CURRENT_TIME_MINUTES) return "departed";
+    if (bar.startMin >= CURRENT_TIME_MINUTES) return "scheduled";
+    return "in_progress";
+  })();
 
   return (
     <>
@@ -349,10 +628,11 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
         shippingHours={shippingHours}
       />
 
-      <div className="relative flex-1 min-h-0 flex flex-col">
+      <div className="relative flex flex-col">
         <ScheduleGrid
         ref={gridRef}
-        docks={activeDocks}
+        docks={displayDocks}
+        holdStartIndex={activeDocks.length}
         trucksById={trucksById}
         assignments={assignments}
         blocked={blocked}
@@ -360,14 +640,36 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
         blockingMode={blockingMode}
         showCurrentTime={dateIso === TODAY_ISO}
         isPastDate={dateIso < TODAY_ISO}
+        nextDayLabel={formatNextDayShort(dateIso)}
+        dateIso={dateIso}
         onBlockedActionAttempt={showToast}
         isDepartedTruckId={isTruckDeparted}
-        onCreateBlock={(d) =>
+        isInProgressTruckId={isTruckInProgress}
+        onCreateBlock={(d) => {
+          const blockStart = d.startMinutes;
+          const blockEnd = d.startMinutes + d.durationMinutes;
+          const colliderId = (() => {
+            for (const a of assignments) {
+              if (a.dockId !== d.dockId) continue;
+              const other = trucksById[a.truckId];
+              if (!other) continue;
+              if (isTruckDeparted(a.truckId)) continue;
+              const bBar = getBarRange(other, a.startMinutes, CURRENT_TIME_MINUTES);
+              const s = bBar.startMin;
+              const e = bBar.startMin + bBar.widthMin;
+              if (blockStart < e && blockEnd > s) return a.truckId;
+            }
+            return null;
+          })();
+          if (colliderId) {
+            setPendingBlock({ draft: d, colliderTruckId: colliderId });
+            return;
+          }
           setBlocked((prev) => [
             ...prev,
             { id: `blk-${Date.now()}`, dateIso, ...d },
-          ])
-        }
+          ]);
+        }}
         onDeleteBlock={(blockId) => setBlocked((prev) => prev.filter((b) => b.id !== blockId))}
         onMoveBlock={(blockId, newStartMinutes) =>
           setBlocked((prev) => prev.map((b) => (b.id === blockId ? { ...b, startMinutes: newStartMinutes } : b)))
@@ -407,11 +709,13 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
           setHoverExpandedId((id) => (id === truckId ? null : id))
         }
         treatment={treatment}
+        typefix={typefix}
+        declutter={declutter}
         />
 
         {/* Toast — sits just above the legend pill */}
         {toast && (
-          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+          <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
             <div className="bg-ink text-white text-body-md rounded-button shadow-drag px-4 py-2.5">
               {toast}
             </div>
@@ -419,19 +723,28 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
         )}
 
         {/* Centered floating legend pill */}
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
           <div className="pointer-events-auto bg-white rounded-button border border-line shadow-drag px-4 py-2.5 flex items-center gap-6">
             {blockingMode ? (
               <p className="text-body-md-strong text-ink">
                 Click and drag on the area you want to block
               </p>
             ) : (
-              <>
-                <LegendSwatch color="#00832D" label="Departed" />
-                <LegendSwatch color="#1537C7" label="Auto assigned" />
-                <LegendSwatch color="#6B21A8" label="Manually assigned" />
-                <LegendSwatch color="#949494" label="Blocked time" />
-              </>
+              declutter ? (
+                <>
+                  <LegendSwatch color={STATUS_COLORS.scheduled.soft} ringColor={STATUS_COLORS.scheduled.strong} label="Scheduled" />
+                  <LegendSwatch color={STATUS_COLORS.in_progress.soft} ringColor={STATUS_COLORS.in_progress.strong} label="In progress" />
+                  <LegendSwatch color={STATUS_COLORS.departed.soft} ringColor={STATUS_COLORS.departed.strong} label="Departed" />
+                  <LegendSwatch color="#FFF0ED" ringColor="#B71000" label="Blocked time" />
+                </>
+              ) : (
+                <>
+                  <LegendSwatch color="#00832D" label="Departed" />
+                  <LegendSwatch color="#1537C7" label="Auto assigned" />
+                  <LegendSwatch color="#6B21A8" label="Manually assigned" />
+                  <LegendSwatch color="#949494" label="Blocked time" />
+                </>
+              )
             )}
           </div>
         </div>
@@ -448,7 +761,7 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
             transform: "rotate(-1deg)",
           }}
         >
-          <TruckCard truck={draggingTruck} variant="scheduled" source="manual" treatment={treatment} />
+          <TruckCard truck={draggingTruck} variant="scheduled" source={draggingSource} barStatus={draggingBarStatus} treatment={treatment} typefix={typefix} declutter={declutter} />
         </div>
       )}
 
@@ -487,7 +800,7 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
           if (!detailTruckId) return null;
           const a = assignments.find((x) => x.truckId === detailTruckId);
           if (!a) return null;
-          return docks.find((d) => d.id === a.dockId)?.label ?? null;
+          return displayDocks.find((d) => d.id === a.dockId)?.label ?? null;
         })()}
         startMinutes={(() => {
           if (!detailTruckId) return null;
@@ -496,6 +809,114 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
         })()}
         onClose={() => setDetailTruckId(null)}
       />
+
+      {(() => {
+        if (!pendingMove) return null;
+        const truck = trucksById[pendingMove.truckId];
+        const fromLabel = docks.find((d) => d.id === pendingMove.fromDockId)?.label ?? "this dock";
+        const verb = truck?.direction === "outbound" ? "loaded" : "unloaded";
+        return (
+          <ErrorModal
+            open
+            title={`This truck is already being ${verb}`}
+            description="Are you sure you want to move it to a different dock?"
+            cancelLabel="Cancel"
+            confirmLabel="Confirm"
+            onCancel={() => setPendingMove(null)}
+            onConfirm={() => {
+              const { truckId, toDockId } = pendingMove;
+              setPendingMove(null);
+              // Confirming an in-progress move may still land on top of
+              // another truck — chain into the collision modal if so.
+              const colliderId = findCollider(truckId, toDockId);
+              if (colliderId) {
+                setPendingCollision({ truckId, toDockId, colliderTruckId: colliderId });
+                return;
+              }
+              applyMove(truckId, toDockId);
+            }}
+          />
+        );
+      })()}
+
+      {(() => {
+        if (!pendingCollision) return null;
+        const toLabel =
+          docks.find((d) => d.id === pendingCollision.toDockId)?.label ?? "This dock";
+        return (
+          <ErrorModal
+            open
+            title={`${toLabel} already has a truck scheduled at this time`}
+            description="This truck will be automatically reassigned to an empty or available dock."
+            cancelLabel="Cancel"
+            confirmLabel="Confirm"
+            onCancel={() => setPendingCollision(null)}
+            onConfirm={() => {
+              applyMoveWithDisplacement(
+                pendingCollision.truckId,
+                pendingCollision.toDockId,
+                pendingCollision.colliderTruckId,
+              );
+              setPendingCollision(null);
+            }}
+          />
+        );
+      })()}
+
+      {(() => {
+        if (!inProgressHoldError) return null;
+        const truck = trucksById[inProgressHoldError.truckId];
+        const verb = truck?.direction === "outbound" ? "loaded" : "unloaded";
+        return (
+          <ErrorModal
+            open
+            hideCancel
+            title={`This truck is already being ${verb}`}
+            description="It cannot be placed on hold."
+            confirmLabel="OK"
+            onCancel={() => setInProgressHoldError(null)}
+            onConfirm={() => setInProgressHoldError(null)}
+          />
+        );
+      })()}
+
+      {(() => {
+        if (!pendingBlock) return null;
+        return (
+          <ErrorModal
+            open
+            title="Blocked time intersects with a scheduled truck"
+            description="This truck will be automatically reassigned to an available dock."
+            cancelLabel="Cancel"
+            confirmLabel="Confirm"
+            onCancel={() => setPendingBlock(null)}
+            onConfirm={() => {
+              const { draft, colliderTruckId } = pendingBlock;
+              const colliderTruck = trucksById[colliderTruckId];
+              const newDockForCollider = findOpenDockForTruck(colliderTruckId, draft.dockId);
+              setBlocked((prev) => [
+                ...prev,
+                { id: `blk-${Date.now()}`, dateIso, ...draft },
+              ]);
+              if (colliderTruck && newDockForCollider) {
+                setAssignments((prev) => {
+                  const without = prev.filter((a) => a.truckId !== colliderTruckId);
+                  return [
+                    ...without,
+                    {
+                      truckId: colliderTruckId,
+                      dockId: newDockForCollider,
+                      startMinutes: colliderTruck.apptMinutes,
+                      source: "manual",
+                    },
+                  ];
+                });
+              }
+              setPendingBlock(null);
+            }}
+          />
+        );
+      })()}
 
       <DockSettingsModal
         open={dockSettingsOpen}
@@ -524,10 +945,13 @@ export function DockManagementV3({ treatment }: { treatment?: Treatment } = {}) 
   );
 }
 
-function LegendSwatch({ color, label }: { color: string; label: string }) {
+function LegendSwatch({ color, ringColor, label }: { color: string; ringColor?: string; label: string }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="size-4 rounded" style={{ backgroundColor: color }} />
+      <span
+        className="size-4 rounded"
+        style={{ backgroundColor: color, border: ringColor ? `1.5px solid ${ringColor}` : undefined }}
+      />
       <span className={cn("text-body-md text-ink")}>{label}</span>
     </div>
   );
@@ -537,4 +961,10 @@ function shiftDate(iso: string, days: number): string {
   const d = new Date(iso + "T00:00:00");
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+function formatNextDayShort(iso: string): string {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + 1);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }

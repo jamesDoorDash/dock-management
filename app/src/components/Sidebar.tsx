@@ -35,13 +35,19 @@ export type PrototypeVersion =
   | "v30"
   | "v31"
   | "v32"
-  | "v33";
+  | "v33"
+  | "v34"
+  | "v35"
+  | "v36";
 
 /** Versions promoted to the "Top contenders" shortlist. */
 export const TOP_CONTENDERS: PrototypeVersion[] = [
   "v3",
   "v6",
   "v20",
+  "v34",
+  "v35",
+  "v36",
 ];
 
 export const VERSION_OPTIONS: { id: PrototypeVersion; label: string }[] = [
@@ -78,22 +84,27 @@ export const VERSION_OPTIONS: { id: PrototypeVersion; label: string }[] = [
   { id: "v31", label: "V31: Dark bg + inset bar + white text" },
   { id: "v32", label: "V32: Sticker (offset colored shadow)" },
   { id: "v33", label: "V33: Pill fill + white text" },
+  { id: "v34", label: "V34: Typefix" },
+  { id: "v35", label: "V35: Declutter" },
+  { id: "v36", label: "V36: Name rearrange" },
 ];
 
 interface SidebarProps {
   version: PrototypeVersion;
   onVersionChange: (v: PrototypeVersion) => void;
+  adminOpen: boolean;
+  onToggleAdmin: () => void;
 }
 
 const NAV_ITEMS = [
-  { icon: Truck, label: "Inbound" },
-  { icon: CalendarClock, label: "Dock management", active: true },
-  { icon: Undo2, label: "Returns" },
-  { icon: Container, label: "Outbound" },
-  { icon: Settings, label: "Admin" },
+  { icon: Truck, label: "Inbound", key: "inbound" as const },
+  { icon: CalendarClock, label: "Dock management", key: "dock" as const },
+  { icon: Undo2, label: "Returns", key: "returns" as const },
+  { icon: Container, label: "Outbound", key: "outbound" as const },
+  { icon: Settings, label: "Admin", key: "admin" as const },
 ];
 
-export function Sidebar({ version, onVersionChange }: SidebarProps) {
+export function Sidebar({ version, onVersionChange, adminOpen, onToggleAdmin }: SidebarProps) {
   return (
     <aside className="w-[256px] shrink-0 border-r border-line bg-surface flex flex-col">
       {/* Brand */}
@@ -124,19 +135,28 @@ export function Sidebar({ version, onVersionChange }: SidebarProps) {
       <nav className="flex-1 px-4 pt-3 overflow-y-auto">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
+          const isActive =
+            item.key === "admin" ? adminOpen : item.key === "dock" && !adminOpen;
+          const onClick =
+            item.key === "admin"
+              ? onToggleAdmin
+              : item.key === "dock" && adminOpen
+              ? onToggleAdmin
+              : undefined;
           return (
             <button
               key={item.label}
               type="button"
+              onClick={onClick}
               className={cn(
                 "w-full h-12 flex items-center gap-3 px-3 rounded-button text-left",
-                item.active
+                isActive
                   ? "bg-surface-hovered text-ink"
                   : "text-ink-subdued hover:bg-surface-hovered hover:text-ink",
               )}
             >
-              <Icon className={cn("size-[18px]", item.active ? "text-ink" : "text-icon-subdued")} />
-              <span className={cn("flex-1 text-body-md", item.active && "font-bold text-ink")}>
+              <Icon className={cn("size-[18px]", isActive ? "text-ink" : "text-icon-subdued")} />
+              <span className={cn("flex-1 text-body-md", isActive && "font-bold text-ink")}>
                 {item.label}
               </span>
             </button>

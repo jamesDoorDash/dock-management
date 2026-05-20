@@ -106,11 +106,11 @@ const RAW_TRUCKS: Truck[] = [
     partner: "Backcountry_VA returns",
     shipmentId: "D96C",
     dateIso: TODAY_ISO,
-    apptMinutes: t(13, 30),
+    apptMinutes: t(12, 30),
     durationMinutes: 30,
     parcelCount: 0,
     loadType: "floor",
-    status: "scheduled",
+    status: "departed",
   },
 
   // === INBOUND trucks ===
@@ -120,12 +120,12 @@ const RAW_TRUCKS: Truck[] = [
     partner: "GCO-1",
     shipmentId: "DLZGRQW6XHQP6HT",
     dateIso: TODAY_ISO,
-    apptMinutes: t(13, 10),
-    durationMinutes: 78, // 1:10 → 2:28 PM
+    apptMinutes: t(11, 0),
+    durationMinutes: 78,
     trailerSize: "53 ft",
     parcelCount: 1523,
     loadType: "pallet",
-    status: "in_progress",
+    status: "departed",
   },
   {
     id: "tr-allpack",
@@ -635,7 +635,7 @@ export const TRUCKS: Truck[] = RAW_TRUCKS.map((t) => {
 
 /** V1 pre-placed assignments — the trucks shown as "In progress" with a dock in the screenshot. */
 export const ASSIGNMENTS: Assignment[] = [
-  { truckId: "tr-gco-1", dockId: "dock-1", startMinutes: t(13, 10), source: "auto" },
+  { truckId: "tr-gco-1", dockId: "dock-1", startMinutes: t(11, 0), source: "auto" },
   { truckId: "tr-allpack", dockId: "dock-2", startMinutes: t(13, 35), source: "auto" },
   { truckId: "tr-petco-in", dockId: "dock-3", startMinutes: t(14, 30), source: "auto" },
   { truckId: "tr-macys-731", dockId: "dock-4", startMinutes: t(15, 35), source: "auto" },

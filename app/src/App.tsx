@@ -3,6 +3,7 @@ import { Sidebar, VERSION_OPTIONS, type PrototypeVersion } from "./components/Si
 import { DockManagementV1 } from "./pages/DockManagementV1";
 import { DockManagementV2 } from "./pages/DockManagementV2";
 import { DockManagementV3 } from "./pages/DockManagementV3";
+import { Admin } from "./pages/Admin";
 import type { Treatment } from "./components/TruckCard";
 
 const TREATMENT_VERSIONS: PrototypeVersion[] = [
@@ -39,12 +40,16 @@ const TREATMENT_VERSIONS: PrototypeVersion[] = [
 ];
 
 function versionToTreatment(v: PrototypeVersion): Treatment {
+  // V34 (Typefix) is V20's TruckCard treatment with type overrides layered on
+  // top via the `.typefix` CSS scope.
+  if (v === "v34" || v === "v35" || v === "v36") return "v20" as Treatment;
   if (TREATMENT_VERSIONS.includes(v)) return v as Treatment;
   return "default";
 }
 
 export default function App() {
-  const [version, setVersion] = useState<PrototypeVersion>("v3");
+  const [version, setVersion] = useState<PrototypeVersion>("v35");
+  const [adminOpen, setAdminOpen] = useState(false);
 
   // Arrow-key navigation across the prototype list.
   useEffect(() => {
@@ -73,15 +78,22 @@ export default function App() {
   }, [version]);
 
   return (
-    <div className="h-full flex bg-white">
-      <Sidebar version={version} onVersionChange={setVersion} />
-      <main className="flex-1 min-w-0 flex flex-col">
-        {version === "v1" ? (
+    <div className={"h-full flex bg-white" + (version === "v34" || version === "v35" || version === "v36" ? " typefix" : "")}>
+      <Sidebar
+        version={version}
+        onVersionChange={setVersion}
+        adminOpen={adminOpen}
+        onToggleAdmin={() => setAdminOpen((v) => !v)}
+      />
+      <main className="flex-1 min-w-0 flex flex-col overflow-y-auto">
+        {adminOpen ? (
+          <Admin typefix={version === "v34" || version === "v35" || version === "v36"} />
+        ) : version === "v1" ? (
           <DockManagementV1 />
         ) : version === "v2" ? (
           <DockManagementV2 />
         ) : (
-          <DockManagementV3 treatment={versionToTreatment(version)} />
+          <DockManagementV3 treatment={versionToTreatment(version)} typefix={version === "v34" || version === "v35" || version === "v36"} declutter={version === "v35" || version === "v36"} />
         )}
       </main>
     </div>

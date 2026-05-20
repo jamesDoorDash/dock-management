@@ -1,7 +1,8 @@
 import { useRef } from "react";
 import { ArrowDownRight, ArrowUpRight, GripVertical, Info, MoreHorizontal } from "lucide-react";
 import type { Truck } from "../data/types";
-import { formatTime, formatTrailer } from "../lib/time";
+import { formatTime, formatTrailer, getStatusLine } from "../lib/time";
+import { CURRENT_TIME_MINUTES } from "../data/mock";
 import { cn } from "../lib/cn";
 
 type Variant = "rail" | "scheduled" | "compact";
@@ -56,6 +57,14 @@ interface Props {
   menuVariant?: "more" | "info";
   /** Visual treatment for scheduled/compact appointment cards. Defaults to current style. */
   treatment?: Treatment;
+  /** V34 Typefix: collapse load-type tag into the meta line and swap the
+   *  apptMinutes label for a Departed/Arrived/ETA status line. */
+  typefix?: boolean;
+  /** V35 Declutter: hide direction arrows and partner-name underlines. */
+  declutter?: boolean;
+  /** V35: color status derived from the card's bar position vs the current-time line
+   *  (departed = entirely past, in_progress = crossing now, scheduled = entirely future). */
+  barStatus?: "scheduled" | "in_progress" | "departed";
 }
 
 const SOURCE_COLORS: Record<Source, { strong: string; soft: string; medium: string }> = {
@@ -63,6 +72,17 @@ const SOURCE_COLORS: Record<Source, { strong: string; soft: string; medium: stri
   auto: { strong: "#1537C7", soft: "#EEF1FC", medium: "#C4CDF1" },
   manual: { strong: "#6B21A8", soft: "#F4ECFB", medium: "#DAC8E9" },
   departed: { strong: "#00832D", soft: "#E7FBEF", medium: "#BFE0CB" },
+};
+
+// V35 Declutter: color the card by truck status instead of assignment source.
+// Tokens sourced from Figma node 4359:94938 (Standardizing truck inbound/outbound).
+export const STATUS_COLORS: Record<
+  "scheduled" | "in_progress" | "departed",
+  { strong: string; soft: string; medium: string; label: string }
+> = {
+  scheduled: { strong: "#111318", soft: "#E9EAEC", medium: "#D3D6D9", label: "Scheduled" },
+  in_progress: { strong: "#784200", soft: "#FFF6D4", medium: "#F5E3A8", label: "In progress" },
+  departed: { strong: "#00832D", soft: "#E7FBEF", medium: "#BFE0CB", label: "Departed" },
 };
 
 type Spec = {
@@ -94,8 +114,12 @@ type Spec = {
  * Note: `radius` is applied per-card via Spec.radius so it overrides the
  * rounded-button class on the container.
  */
-function specFor(treatment: Treatment, source: Source): Spec {
-  const c = SOURCE_COLORS[source];
+function specFor(
+  treatment: Treatment,
+  source: Source,
+  statusPalette?: { strong: string; soft: string; medium: string },
+): Spec {
+  const c = statusPalette ?? SOURCE_COLORS[source];
   const ink = "#111318";
   const subInk = "#6C707A";
   const white = "#FFFFFF";
@@ -382,14 +406,29 @@ export function TruckCard({
   onMenuOpen,
   menuVariant = "more",
   treatment = "default",
+  typefix = false,
+  declutter = false,
+  barStatus,
 }: Props) {
   const DirectionIcon = truck.direction === "inbound" ? ArrowDownRight : ArrowUpRight;
   const directionLabel = truck.direction === "inbound" ? "Inbound truck" : "Outbound truck";
   const menuBtnRef = useRef<HTMLButtonElement>(null);
 
+  // V35: color cards by where their bar sits relative to the current-time line.
+  // `barStatus` is computed by the grid (which owns the bar layout). When it's
+  // missing (e.g. drag preview / rail), fall back to the truck's stored status.
+  const statusPalette = declutter
+    ? STATUS_COLORS[
+        (barStatus ??
+          (truck.status === "in_progress" || truck.status === "departed"
+            ? truck.status
+            : "scheduled")) as "scheduled" | "in_progress" | "departed"
+      ]
+    : undefined;
+
   // === Compact: short pill, direction arrow + origin underlined ===
   if (variant === "compact") {
-    const spec = specFor(treatment, source ?? "auto");
+    const spec = specFor(treatment, source ?? "auto", statusPalette);
     const compactInset = spec.leftBar?.inset;
     return (
       <div
@@ -444,8 +483,8 @@ export function TruckCard({
           style={{ color: spec.textColor, fontWeight: spec.textBold ? 700 : undefined }}
         >
           <span
-            className="inline-flex min-w-0 max-w-full items-center gap-1 border-b hover:opacity-100"
-            style={{ borderColor: spec.underline }}
+            className={cn("inline-flex min-w-0 max-w-full items-center gap-1 hover:opacity-100", !declutter && "border-b")}
+            style={{ borderColor: declutter ? undefined : spec.underline }}
           >
             {spec.dot && (
               <span
@@ -454,7 +493,7 @@ export function TruckCard({
                 style={{ backgroundColor: spec.dot }}
               />
             )}
-            <DirectionIcon className="size-3.5 shrink-0" />
+            {!declutter && <DirectionIcon className="size-3.5 shrink-0" />}
             <span className="truncate">{truck.partner}</span>
           </span>
         </button>
@@ -464,7 +503,7 @@ export function TruckCard({
 
   // === Scheduled (full card on grid): tinted bg + colored border ===
   if (variant === "scheduled") {
-    const spec = specFor(treatment, source ?? "auto");
+    const spec = specFor(treatment, source ?? "auto", statusPalette);
     const arrivalLabel = "arrival";
     return (
       <div
@@ -532,8 +571,8 @@ export function TruckCard({
               style={{ color: spec.textColor, fontWeight: spec.textBold ? 700 : undefined }}
             >
               <span
-                className="inline-flex min-w-0 max-w-full items-center gap-1 border-b"
-                style={{ borderColor: onCollapse ? spec.underline : "transparent" }}
+                className={cn("inline-flex min-w-0 max-w-full items-center gap-1", !declutter && "border-b")}
+                style={{ borderColor: declutter ? undefined : (onCollapse ? spec.underline : "transparent") }}
               >
                 {spec.dot && (
                   <span
@@ -542,7 +581,7 @@ export function TruckCard({
                     style={{ backgroundColor: spec.dot }}
                   />
                 )}
-                <DirectionIcon className="size-3.5 shrink-0" />
+                {!declutter && <DirectionIcon className="size-3.5 shrink-0" />}
                 <span className="truncate">{truck.partner}</span>
               </span>
             </button>
@@ -568,24 +607,52 @@ export function TruckCard({
             )}
           </div>
 
-          <p className="text-[12px] truncate" style={{ color: spec.subTextColor }}>
-            {formatTime(truck.apptMinutes)} {arrivalLabel}
-          </p>
-          <p className="text-[12px] truncate" style={{ color: spec.subTextColor }}>
-            {formatTrailer(truck.trailerSize, truck.parcelCount)}
-          </p>
-          <span
-            className="inline-flex self-start max-w-full items-center px-2 h-5 rounded-tag text-body-sm-strong whitespace-nowrap overflow-hidden"
-            style={{
-              backgroundColor: spec.tag.bg,
-              border: `1px solid ${spec.tag.border}`,
-              color: spec.tag.text,
-            }}
-          >
-            <span className="truncate">
-              {truck.loadType === "floor" ? "Floor loaded" : "Palletized"}
-            </span>
-          </span>
+          {typefix ? (
+            <>
+              <p className="text-[12px] truncate" style={{ color: spec.subTextColor }}>
+                {(() => {
+                  const s = getStatusLine(truck, CURRENT_TIME_MINUTES, source === "departed");
+                  return (
+                    <>
+                      {s.primary}
+                      {s.late && (
+                        <>
+                          {" · "}
+                          <span className="font-bold text-ink">{s.late}</span>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
+              </p>
+              <p className="text-[12px] truncate" style={{ color: spec.subTextColor }}>
+                {formatTrailer(truck.trailerSize, truck.parcelCount)}
+                {" · "}
+                {truck.loadType === "floor" ? "Floor loaded" : "Palletized"}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-[12px] truncate" style={{ color: spec.subTextColor }}>
+                {formatTime(truck.apptMinutes)} {arrivalLabel}
+              </p>
+              <p className="text-[12px] truncate" style={{ color: spec.subTextColor }}>
+                {formatTrailer(truck.trailerSize, truck.parcelCount)}
+              </p>
+              <span
+                className="inline-flex self-start max-w-full items-center px-2 h-5 rounded-tag text-body-sm-strong whitespace-nowrap overflow-hidden"
+                style={{
+                  backgroundColor: spec.tag.bg,
+                  border: `1px solid ${spec.tag.border}`,
+                  color: spec.tag.text,
+                }}
+              >
+                <span className="truncate">
+                  {truck.loadType === "floor" ? "Floor loaded" : "Palletized"}
+                </span>
+              </span>
+            </>
+          )}
         </div>
       </div>
     );

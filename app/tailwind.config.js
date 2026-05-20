@@ -62,6 +62,7 @@ export default {
       fontSize: {
         "display-lg": ["32px", { lineHeight: "40px", letterSpacing: "-0.01em", fontWeight: "700" }],
         "display-md": ["24px", { lineHeight: "28px", letterSpacing: "-0.01em", fontWeight: "700" }],
+        "title-lg": ["20px", { lineHeight: "24px", letterSpacing: "-0.01em", fontWeight: "700" }],
         "title-md": ["18px", { lineHeight: "22px", letterSpacing: "-0.01em", fontWeight: "700" }],
         "body-lg": ["16px", { lineHeight: "22px", letterSpacing: "-0.01em", fontWeight: "500" }],
         "body-lg-strong": ["16px", { lineHeight: "22px", letterSpacing: "-0.01em", fontWeight: "700" }],
@@ -69,6 +70,8 @@ export default {
         "body-md-strong": ["14px", { lineHeight: "20px", letterSpacing: "-0.01em", fontWeight: "700" }],
         "body-sm": ["12px", { lineHeight: "18px", letterSpacing: "-0.01em", fontWeight: "400" }],
         "body-sm-strong": ["12px", { lineHeight: "18px", letterSpacing: "-0.01em", fontWeight: "600" }],
+        "label-xs": ["10px", { lineHeight: "18px", letterSpacing: "-0.01em", fontWeight: "400" }],
+        "label-xs-strong": ["10px", { lineHeight: "18px", letterSpacing: "-0.01em", fontWeight: "700" }],
       },
       borderRadius: {
         button: "8px",

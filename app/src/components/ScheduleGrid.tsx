@@ -3,7 +3,7 @@ import { Trash2 } from "lucide-react";
 import type { Assignment, BlockedSlot, Dock, Truck } from "../data/types";
 import { TruckCard, type Treatment } from "./TruckCard";
 import { CURRENT_TIME_MINUTES, SCHEDULE_START_MINUTES, SCHEDULE_END_MINUTES } from "../data/mock";
-import { formatTime, formatTimeShort } from "../lib/time";
+import { formatTime, formatTimeShort, getBarRange } from "../lib/time";
 import { cn } from "../lib/cn";
 
 const DOCK_COL_WIDTH = 92;
@@ -75,8 +75,21 @@ interface Props {
   onBlockedActionAttempt?: (message: string) => void;
   /** Predicate — truck has already departed (or its window is past) and can't be rearranged. */
   isDepartedTruckId?: (truckId: string) => boolean;
+  /** Predicate — truck has actually arrived and is currently at the dock. */
+  isInProgressTruckId?: (truckId: string) => boolean;
   /** Visual treatment for appointment cards (temporary V4–V14 prototypes). */
   treatment?: Treatment;
+  /** V34: enable the Typefix card layout (combined meta line, status text). */
+  typefix?: boolean;
+  /** V35: declutter — hide direction arrows and partner-name underlines. */
+  declutter?: boolean;
+  /** Short label for the day after the viewed date (e.g. "May 14"), shown on past-midnight hour headers. */
+  nextDayLabel?: string;
+  /** Viewed date (ISO). Used as the trigger for auto-scrolling on day change. */
+  dateIso?: string;
+  /** If set, draws a thick divider above the row at this index — used to visually
+   *  separate the on-hold rows from the regular dock rows. */
+  holdStartIndex?: number;
 }
 
 function BlockedCard({
@@ -91,6 +104,8 @@ function BlockedCard({
   blockingMode,
   onMoveStart,
   onResizeStart,
+  treatment,
+  declutter,
 }: {
   density: "expanded" | "compact";
   rowHeight: number;
@@ -103,17 +118,25 @@ function BlockedCard({
   blockingMode?: boolean;
   onMoveStart?: (e: React.PointerEvent) => void;
   onResizeStart?: (e: React.PointerEvent) => void;
+  treatment?: Treatment;
+  declutter?: boolean;
 }) {
   const padY = density === "compact" ? 4 : 6;
   const left = ((startMinutes - SCHEDULE_START_MINUTES) / 60) * hourWidth;
   const width = (durationMinutes / 60) * hourWidth;
   const interactive = blockingMode && !draft;
+  // V20 (and V34, which inherits V20) — match the inset "little bar"
+  // appointment treatment instead of the legacy outlined box.
+  const useInsetBar = treatment === "v20";
   return (
     <div
       data-block
       onPointerDown={interactive ? onMoveStart : undefined}
       className={cn(
-        "absolute z-10 bg-line border-2 border-[#b2b2b2] rounded flex items-center justify-between pl-2 pr-0.5 text-body-md font-medium text-ink overflow-hidden",
+        "absolute z-10 flex items-center justify-between pr-0.5 text-body-md font-medium overflow-hidden",
+        !declutter && "bg-line text-ink",
+        useInsetBar ? "rounded-lg pl-[13px]" : "border-2 rounded pl-2",
+        !declutter && !useInsetBar && "border-[#b2b2b2]",
         draft && "opacity-80 cursor-grabbing",
         interactive && "cursor-grab active:cursor-grabbing touch-none",
       )}
@@ -122,8 +145,29 @@ function BlockedCard({
         top: dockIdx * rowHeight + padY,
         width,
         height: rowHeight - padY * 2,
+        ...(declutter
+          ? {
+              backgroundColor: "#FFF0ED",
+              color: "#B71000",
+              ...(useInsetBar ? {} : { borderColor: "#B71000" }),
+            }
+          : {}),
       }}
     >
+      {useInsetBar && (
+        <span
+          aria-hidden
+          className="absolute"
+          style={{
+            left: 6,
+            top: 4,
+            bottom: 4,
+            width: 3,
+            borderRadius: 2,
+            backgroundColor: declutter ? "#B71000" : "#6c707a",
+          }}
+        />
+      )}
       <span className="truncate">Blocked</span>
       {!draft && (
         <button
@@ -183,11 +227,21 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
     isPastDate = false,
     onBlockedActionAttempt,
     isDepartedTruckId,
+    isInProgressTruckId,
     treatment,
+    typefix,
+    declutter,
+    nextDayLabel,
+    dateIso,
+    holdStartIndex,
   },
   ref,
 ) {
-  const { HOUR_WIDTH, ROW_HEIGHT } = DENSITY[density];
+  const { HOUR_WIDTH, ROW_HEIGHT: BASE_ROW_HEIGHT } = DENSITY[density];
+  // Typefix removes the load-type tag line from expanded cards, so the row can
+  // shrink by roughly one line + its gap.
+  const ROW_HEIGHT =
+    typefix && density === "expanded" ? BASE_ROW_HEIGHT - 22 : BASE_ROW_HEIGHT;
   const totalMinutes = SCHEDULE_END_MINUTES - SCHEDULE_START_MINUTES;
   const totalWidth = (totalMinutes / 60) * HOUR_WIDTH;
   const totalHeight = docks.length * ROW_HEIGHT;
@@ -359,18 +413,39 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
     scroller.scrollLeft = hoursSinceStart * HOUR_WIDTH;
   };
 
-  // On mount / when switching to a day with a current-time indicator (or zoom changes),
-  // scroll horizontally so the hour boundary *before* "now" sits at the left edge of the
-  // visible chart (e.g. if now is 2:15 PM, the left edge lands on 2:00 PM).
+  // Latest assignments — read inside the date-change effect without retriggering it on every drop.
+  const assignmentsRef = useRef(assignments);
+  useEffect(() => {
+    assignmentsRef.current = assignments;
+  }, [assignments]);
+
+  // On mount / when switching days (or zoom changes), align the left edge of the chart
+  // to the hour boundary *before* a meaningful anchor:
+  //   - Today: the hour before "now" (e.g. 2:15 PM → left edge lands on 2:00 PM).
+  //   - Other days: the hour before the first scheduled truck's arrival.
+  //   - If there are no assignments on a non-today date, fall back to the chart start.
+  // Intentionally NOT depending on `assignments` — drag-drops that change
+  // assignments must not yank the scroll position back to "now".
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     if (showCurrentTime) {
       scrollToCurrentTime();
-    } else {
-      scroller.scrollLeft = 0;
+      return;
     }
-  }, [showCurrentTime, HOUR_WIDTH]);
+    const firstStart = assignmentsRef.current.reduce<number | null>(
+      (min, a) => (min === null || a.startMinutes < min ? a.startMinutes : min),
+      null,
+    );
+    if (firstStart === null) {
+      scroller.scrollLeft = 0;
+      return;
+    }
+    const hoursSinceStart = Math.floor(
+      (firstStart - SCHEDULE_START_MINUTES) / 60,
+    );
+    scroller.scrollLeft = Math.max(0, hoursSinceStart) * HOUR_WIDTH;
+  }, [showCurrentTime, HOUR_WIDTH, dateIso]);
 
   useImperativeHandle(ref, () => ({
     scrollToCurrentTime,
@@ -395,11 +470,11 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
   for (let m = SCHEDULE_START_MINUTES; m < SCHEDULE_END_MINUTES; m += 60) hours.push(m);
 
   return (
-    <div className="px-10 flex-1 min-h-0 flex flex-col">
-      <div className="bg-white max-h-full min-h-0 flex flex-col border border-line rounded-card overflow-hidden">
+    <div className="px-10 flex flex-col">
+      <div className="bg-white flex flex-col border border-line rounded-card overflow-hidden">
         <div
           ref={scrollerRef}
-          className="overflow-auto min-h-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           onScroll={(e) => {
             const proxy = proxyScrollbarRef.current;
             if (proxy && proxy.scrollLeft !== e.currentTarget.scrollLeft) {
@@ -433,7 +508,9 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                   >
                     <span>{formatTimeShort(m)}</span>
                     {m >= 24 * 60 && (
-                      <span className="text-body-sm text-ink-subdued font-normal">(tomorrow)</span>
+                      <span className="text-body-sm text-ink-subdued font-normal">
+                        ({nextDayLabel ?? "tomorrow"})
+                      </span>
                     )}
                   </div>
                 ))}
@@ -445,18 +522,24 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                       style={{
                         left:
                           ((CURRENT_TIME_MINUTES - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH,
-                        top: HEADER_HEIGHT - 11,
+                        top: HEADER_HEIGHT - 13,
                       }}
                     >
                       <svg width="14" height="12" viewBox="0 0 14 12" fill="none">
                         <path
                           d="M7 11 L1.5 2 L12.5 2 Z"
-                          fill="#949494"
-                          stroke="#949494"
+                          fill="#111318"
+                          stroke="#111318"
                           strokeWidth="2"
                           strokeLinejoin="round"
                         />
                       </svg>
+                      {/* Bridge from triangle tip down through the header so the stem in the
+                          grid (which sits behind the sticky header bg) appears continuous. */}
+                      <div
+                        className="absolute left-1/2 -translate-x-1/2 w-0.5 bg-ink"
+                        style={{ top: 10, height: 6 }}
+                      />
                     </div>
                   )}
               </div>
@@ -466,7 +549,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
             <div className="flex">
               {/* Dock labels */}
               <div
-                className="sticky left-0 z-50 bg-white border-r border-line"
+                className="sticky left-0 z-10 bg-white border-r border-line relative"
                 style={{ width: DOCK_COL_WIDTH, minWidth: DOCK_COL_WIDTH }}
               >
                 {docks.map((d, i) => (
@@ -481,13 +564,20 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                     {d.label}
                   </div>
                 ))}
+                {holdStartIndex != null && holdStartIndex > 0 && holdStartIndex < docks.length && (
+                  <div
+                    aria-hidden
+                    className="absolute left-0 right-0 bg-line pointer-events-none"
+                    style={{ top: holdStartIndex * ROW_HEIGHT - 2, height: 4 }}
+                  />
+                )}
               </div>
 
               {/* Schedule canvas */}
               <div
                 ref={gridRef}
                 onPointerDown={onGridPointerDown}
-                className={cn("relative", blockingMode && "cursor-crosshair")}
+                className={cn("relative isolate", blockingMode && "cursor-crosshair")}
                 style={{ width: totalWidth, height: totalHeight }}
                 data-schedule-grid
               >
@@ -509,16 +599,23 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                     style={{ left: (i + 1) * HOUR_WIDTH - 1, width: 1 }}
                   />
                 ))}
+                {holdStartIndex != null && holdStartIndex > 0 && holdStartIndex < docks.length && (
+                  <div
+                    aria-hidden
+                    className="absolute left-0 right-0 bg-line pointer-events-none"
+                    style={{ top: holdStartIndex * ROW_HEIGHT - 2, height: 4 }}
+                  />
+                )}
 
                 {/* Current-time line — inside the grid, rendered before assignments so trucks paint on top */}
                 {showCurrentTime &&
                   CURRENT_TIME_MINUTES >= SCHEDULE_START_MINUTES &&
                   CURRENT_TIME_MINUTES <= SCHEDULE_END_MINUTES && (
                     <div
-                      className="absolute pointer-events-none w-px bg-sched-blocked -translate-x-1/2"
+                      className="absolute pointer-events-none w-0.5 bg-ink -translate-x-1/2"
                       style={{
                         left: ((CURRENT_TIME_MINUTES - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH,
-                        top: -1, // extend 1px upward so the triangle tip overlaps with no gap
+                        top: -3, // extend upward so the stem meets the triangle tip with no gap
                         bottom: 0,
                       }}
                     />
@@ -557,6 +654,8 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                       onDelete={() => onDeleteBlock?.(b.id)}
                       onMoveStart={(e) => startBlockMove(b.id, e)}
                       onResizeStart={(e) => startBlockResize(b.id, e)}
+                      treatment={treatment}
+                      declutter={declutter}
                     />
                   );
                 })}
@@ -575,6 +674,8 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                         startMinutes={blockDraft.startMin}
                         durationMinutes={blockDraft.endMin - blockDraft.startMin}
                         draft
+                        treatment={treatment}
+                        declutter={declutter}
                       />
                     );
                   })()}
@@ -591,12 +692,13 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                     const width = (truck.durationMinutes / 60) * HOUR_WIDTH;
                     return (
                       <div
-                        className="absolute rounded-button border-2 border-dashed border-sched-manual bg-sched-manual/10 pointer-events-none"
+                        className="absolute rounded-button border-2 border-dashed border-ink bg-ink/5 pointer-events-none"
                         style={{
                           left,
                           top: dockIdx * ROW_HEIGHT + 6,
                           width,
                           height: ROW_HEIGHT - 12,
+                          zIndex: 50,
                         }}
                       />
                     );
@@ -623,11 +725,30 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                   const dockIdx = docks.findIndex((d) => d.id === a.dockId);
                   if (dockIdx < 0) return null;
                   const m = meta.get(a.truckId) ?? { z: 1, shiftX: 0 };
-                  const left =
-                    ((a.startMinutes - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH + m.shiftX;
-                  const width = (truck.durationMinutes / 60) * HOUR_WIDTH;
                   const isDragging = draggingTruckId === a.truckId;
                   const departed = isDepartedTruckId?.(a.truckId) ?? false;
+                  // Align the bar with the status label: ETA → left edge, Arrived →
+                  // left edge, Departed → right edge. Only the visual position
+                  // changes; hit-testing / drag still uses a.startMinutes.
+                  const bar = getBarRange(
+                    truck,
+                    a.startMinutes,
+                    CURRENT_TIME_MINUTES,
+                    departed,
+                  );
+                  const barEnd = bar.startMin + bar.widthMin;
+                  const barStatus: "scheduled" | "in_progress" | "departed" = showCurrentTime
+                    ? barEnd < CURRENT_TIME_MINUTES
+                      ? "departed"
+                      : bar.startMin >= CURRENT_TIME_MINUTES
+                        ? "scheduled"
+                        : "in_progress"
+                    : isPastDate
+                      ? "departed"
+                      : "scheduled";
+                  const left =
+                    ((bar.startMin - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH + m.shiftX;
+                  const width = (bar.widthMin / 60) * HOUR_WIDTH;
                   const v = variantByTruckId?.(a.truckId) ?? "scheduled";
                   const source = departed
                     ? "departed"
@@ -647,13 +768,20 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                       key={a.truckId}
                       data-truck-card
                       data-expanded-card={breakoutExpand ? "true" : undefined}
-                      onMouseEnter={() => onHoverExpand?.(a.truckId)}
-                      onMouseLeave={() => onHoverCollapse?.(a.truckId)}
+                      onMouseEnter={() => {
+                        if (draggingTruckId) return;
+                        onHoverExpand?.(a.truckId);
+                      }}
+                      onMouseLeave={() => {
+                        if (draggingTruckId) return;
+                        onHoverCollapse?.(a.truckId);
+                      }}
                       className={cn(
                         "absolute",
                         isDragging && "opacity-40",
                         breakoutExpand && "shadow-drag rounded-button",
                         blockingMode && "opacity-40 pointer-events-none",
+                        draggingTruckId && !isDragging && "pointer-events-none",
                         departed && !isDragging && "cursor-not-allowed",
                       )}
                       style={{
@@ -671,6 +799,9 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                         variant={v}
                         source={source}
                         treatment={treatment}
+                        typefix={typefix}
+                        declutter={declutter}
+                        barStatus={barStatus}
                         showMenu={showMenu}
                         menuVariant={menuVariantByTruckId?.(a.truckId) ?? "more"}
                         onMenuOpen={(rect) => onMenuOpen?.(a.truckId, rect)}
@@ -691,20 +822,22 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
               const guideX =
                 DOCK_COL_WIDTH +
                 ((hoverSlot.startMinutes - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH;
+              const inProgress = isInProgressTruckId?.(draggingTruckId) ?? false;
               return (
                 <>
-                  {/* Solid vertical stick — spans below the header to the bottom of the chart */}
+                  {/* Solid vertical stick — starts at the top of the dock rows and runs to
+                      the bottom of the chart. z-10 keeps it behind the floating legend (z-20). */}
                   <div
-                    className="absolute z-30 pointer-events-none border-l-2 border-sched-manual"
+                    className="absolute z-10 pointer-events-none border-l-2 border-ink"
                     style={{ left: guideX, top: HEADER_HEIGHT, bottom: 0 }}
                   />
-                  {/* Single flag containing both the eyebrow label and the time */}
+                  {/* Flag sits flush inside the header bar (no overhang above). */}
                   <div
-                    className="absolute z-30 pointer-events-none -translate-x-1/2 flex flex-col items-center px-3 py-1.5 rounded-button bg-sched-manual text-white whitespace-nowrap shadow-card"
-                    style={{ left: guideX, top: 4 }}
+                    className="absolute z-30 pointer-events-none -translate-x-1/2 flex flex-col items-center justify-center px-3 rounded-button bg-ink text-white whitespace-nowrap shadow-card"
+                    style={{ left: guideX, top: 0, height: HEADER_HEIGHT }}
                   >
-                    <span className="text-[10px] uppercase tracking-wider text-white/70 leading-none">
-                      Appointment time
+                    <span className="text-label-xs-strong uppercase tracking-wider text-white/70 leading-none">
+                      {inProgress ? "Arrival time" : "Appointment time"}
                     </span>
                     <span className="text-body-md-strong leading-tight mt-0.5">
                       {formatTime(hoverSlot.startMinutes)}
@@ -719,6 +852,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
       <div
         ref={proxyScrollbarRef}
         className="overflow-x-auto scrollbar-thin mt-2"
+        style={{ marginBottom: ROW_HEIGHT * 3 }}
         onScroll={(e) => {
           const scroller = scrollerRef.current;
           if (scroller && scroller.scrollLeft !== e.currentTarget.scrollLeft) {
