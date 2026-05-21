@@ -221,7 +221,101 @@ const PROJECT_TOKEN_USAGE: Record<string, TokenUsage> = {
 /** Off-grid ad-hoc sizes are snapped to Prism sizes by Typefix. */
 const TYPEFIX_SNAP: Record<number, number> = { 11: 12, 22: 20 };
 
-type Tab = "tokens" | "figma" | "adhoc";
+interface ColorToken {
+  name: string;
+  cls: string;
+  hex: string;
+  prism: string | null;
+  role: string;
+}
+
+/**
+ * Foundation color tokens defined in tailwind.config.js.
+ * `prism` names follow Prism Foundations color aliases. `null` = no direct
+ * Prism token — value is project-specific.
+ */
+const COLOR_TOKENS: ColorToken[] = [
+  { name: "ink", cls: "text-ink / bg-ink", hex: "#111318", prism: "text/default · sys-color-text-default", role: "Primary text & high-contrast surfaces" },
+  { name: "ink-subdued", cls: "text-ink-subdued", hex: "#6C707A", prism: "text/subdued · sys-color-text-subdued", role: "Secondary text" },
+  { name: "icon (DEFAULT)", cls: "text-icon", hex: "#111318", prism: "icon/default · sys-color-icon-default", role: "Default icon color (black)" },
+  { name: "icon-subdued", cls: "text-icon-subdued", hex: "#6C707A", prism: "icon/subdued · sys-color-icon-subdued", role: "De-emphasized icons" },
+  { name: "icon-disabled", cls: "text-icon-disabled", hex: "#AEB1B7", prism: "icon/disabled · sys-color-icon-disabled", role: "Disabled icons" },
+  { name: "surface (DEFAULT)", cls: "bg-surface", hex: "#FFFFFF", prism: "surface/default · sys-color-surface-default", role: "Page / card background" },
+  { name: "surface-hovered", cls: "bg-surface-hovered", hex: "#F6F7F8", prism: "surface/hovered · sys-color-surface-hovered", role: "Row & button hover" },
+  { name: "surface-subdued", cls: "bg-surface-subdued", hex: "#FAFAFA", prism: "surface/subdued · sys-color-surface-subdued", role: "Subtle section backgrounds" },
+  { name: "surface-strong", cls: "bg-surface-strong", hex: "#E9EAEC", prism: "surface/strong · sys-color-surface-strong", role: "Stronger surface contrast (chips)" },
+  { name: "line (DEFAULT)", cls: "border-line", hex: "#F1F1F1", prism: "border/default · sys-color-border-default", role: "Default border" },
+  { name: "line-hovered", cls: "border-line-hovered", hex: "#D3D6D9", prism: "border/hovered · sys-color-border-hovered", role: "Hover/focus border" },
+  { name: "line-strong", cls: "border-line-strong", hex: "#D3D6D9", prism: "border/strong · sys-color-border-strong", role: "Stronger border (cards)" },
+  { name: "line-selected", cls: "border-line-selected", hex: "#111318", prism: "border/selected · sys-color-border-selected", role: "Selected border = ink" },
+  { name: "positive", cls: "text-positive / bg-positive", hex: "#00832D", prism: "text/positive · sys-color-text-positive", role: "Success text + departed schedule" },
+  { name: "positive-bg", cls: "bg-positive-bg", hex: "#E7FBEF", prism: "background/positive · sys-color-bg-positive-subtle", role: "Positive callout background" },
+  { name: "negative", cls: "text-negative / bg-negative", hex: "#B71000", prism: "text/negative · sys-color-text-negative", role: "Error / late warning text" },
+  { name: "negative-bg", cls: "bg-negative-bg", hex: "#FFF0ED", prism: "background/negative · sys-color-bg-negative-subtle", role: "Negative callout background" },
+  { name: "brand", cls: "text-brand / bg-brand", hex: "#4969F5", prism: "brand/primary (custom)", role: "Brand accent (used sparingly)" },
+  { name: "sched-auto", cls: "bg-sched-auto", hex: "#1537C7", prism: null, role: "Schedule: Auto-assigned strong" },
+  { name: "sched-auto-bg", cls: "bg-sched-auto-bg", hex: "#EEF1FC", prism: null, role: "Schedule: Auto-assigned tint" },
+  { name: "sched-manual", cls: "bg-sched-manual", hex: "#6B21A8", prism: null, role: "Schedule: Manually-assigned strong" },
+  { name: "sched-manual-bg", cls: "bg-sched-manual-bg", hex: "#F4ECFB", prism: null, role: "Schedule: Manually-assigned tint" },
+  { name: "sched-departed", cls: "bg-sched-departed", hex: "#00832D", prism: "positive (alias)", role: "Schedule: Departed strong" },
+  { name: "sched-departed-bg", cls: "bg-sched-departed-bg", hex: "#E7FBEF", prism: "positive-bg (alias)", role: "Schedule: Departed tint" },
+  { name: "sched-blocked", cls: "bg-sched-blocked", hex: "#949494", prism: null, role: "Schedule: Blocked strong" },
+  { name: "sched-blocked-bg", cls: "bg-sched-blocked-bg", hex: "#F1F1F1", prism: "line (alias)", role: "Schedule: Blocked tint" },
+];
+
+interface InlineHex {
+  hex: string;
+  file: string;
+  line: number;
+  context: string;
+  matchesToken: string | null;
+  prism: string | null;
+}
+
+/**
+ * Inline `#xxxxxx` color literals found in source (excluding tailwind config
+ * and dist). `matchesToken` = closest Prism / foundation token in the project,
+ * or null when the value is off-spec.
+ */
+const INLINE_HEXES: InlineHex[] = [
+  // TruckDetailSheet status palettes (Tailwind-ish neutrals, not Prism)
+  { hex: "#111111", file: "components/TruckDetailSheet.tsx", line: 134, context: "Close (X) icon", matchesToken: "ink (#111318)", prism: "icon/default — off by 1 nibble" },
+  { hex: "#111111", file: "components/TruckDetailSheet.tsx", line: 147, context: "Details H2", matchesToken: "ink (#111318)", prism: "text/default — off by 1 nibble" },
+  { hex: "#111111", file: "components/TruckDetailSheet.tsx", line: 349, context: "Stat value", matchesToken: "ink (#111318)", prism: "text/default — off by 1 nibble" },
+  { hex: "#191919", file: "components/ErrorModal.tsx", line: 53, context: "Modal scrim (with alpha 80)", matchesToken: null, prism: null },
+  { hex: "#1E40AF", file: "components/TruckDetailSheet.tsx", line: 19, context: "'Loading' status text", matchesToken: null, prism: "Tailwind blue-800 (not Prism)" },
+  { hex: "#374151", file: "components/TruckDetailSheet.tsx", line: 21, context: "'Departed' / 'Scheduled' status text", matchesToken: null, prism: "Tailwind gray-700 (not Prism)" },
+  { hex: "#374151", file: "components/TruckDetailSheet.tsx", line: 249, context: "Table header text", matchesToken: null, prism: "Tailwind gray-700 (not Prism)" },
+  { hex: "#6B7280", file: "components/TruckDetailSheet.tsx", line: 155, context: "Chevron / muted body / mapbox attrib.", matchesToken: "ink-subdued (#6C707A)", prism: "Tailwind gray-500 — near-match" },
+  { hex: "#9CA3AF", file: "components/TruckDetailSheet.tsx", line: 270, context: "Muted figure (expected counts)", matchesToken: "icon-disabled (#AEB1B7)", prism: "Tailwind gray-400 (not Prism)" },
+  { hex: "#B2B2B2", file: "components/ScheduleGrid.tsx", line: 147, context: "Slot border (legacy)", matchesToken: "icon-disabled (#AEB1B7)", prism: "Off-spec gray" },
+  { hex: "#B2B2B2", file: "components/ScheduleGrid.tsx", line: 204, context: "Resize-handle pill", matchesToken: "icon-disabled (#AEB1B7)", prism: "Off-spec gray" },
+  { hex: "#DBEAFE", file: "components/TruckDetailSheet.tsx", line: 19, context: "'Loading' status bg", matchesToken: null, prism: "Tailwind blue-100 (not Prism)" },
+  { hex: "#E5E7EB", file: "components/TruckDetailSheet.tsx", line: 21, context: "'Departed' / 'Scheduled' chip bg + sheet border", matchesToken: "surface-strong (#E9EAEC)", prism: "Tailwind gray-200 — near-match" },
+  { hex: "#DC2626", file: "components/TruckDetailSheet.tsx", line: 328, context: "Help/alert icon", matchesToken: "negative (#B71000)", prism: "Tailwind red-600 — replace with negative" },
+  { hex: "#EB1700", file: "components/Sidebar.tsx", line: 116, context: "DoorDash wordmark fill", matchesToken: null, prism: "DoorDash brand red" },
+  { hex: "#F9FAFB", file: "components/TruckDetailSheet.tsx", line: 249, context: "Table header bg + row hover", matchesToken: "surface-subdued (#FAFAFA)", prism: "Tailwind gray-50 — near-match" },
+  { hex: "#FEF3C7", file: "components/TruckDetailSheet.tsx", line: 17, context: "'In progress' status bg", matchesToken: null, prism: "Tailwind amber-100 (not Prism)" },
+  { hex: "#92400E", file: "components/TruckDetailSheet.tsx", line: 17, context: "'In progress' status text", matchesToken: null, prism: "Tailwind amber-800 (not Prism)" },
+  { hex: "#F3F0EA", file: "components/TruckDetailSheet.tsx", line: 162, context: "Fake map base", matchesToken: null, prism: null },
+  { hex: "#F6C453", file: "components/TruckDetailSheet.tsx", line: 168, context: "Fake map road", matchesToken: null, prism: null },
+  { hex: "#CFE3C4", file: "components/TruckDetailSheet.tsx", line: 170, context: "Fake map park polygons", matchesToken: null, prism: null },
+  // TruckCard schedule palette (mirrors tailwind tokens for sched-*)
+  { hex: "#1537C7", file: "components/TruckCard.tsx", line: 76, context: "Auto strong (matches sched-auto)", matchesToken: "sched-auto", prism: null },
+  { hex: "#C4CDF1", file: "components/TruckCard.tsx", line: 76, context: "Auto medium (between strong & bg)", matchesToken: null, prism: null },
+  { hex: "#EEF1FC", file: "components/TruckCard.tsx", line: 76, context: "Auto soft (matches sched-auto-bg)", matchesToken: "sched-auto-bg", prism: null },
+  { hex: "#6B21A8", file: "components/TruckCard.tsx", line: 77, context: "Manual strong (matches sched-manual)", matchesToken: "sched-manual", prism: null },
+  { hex: "#DAC8E9", file: "components/TruckCard.tsx", line: 77, context: "Manual medium", matchesToken: null, prism: null },
+  { hex: "#F4ECFB", file: "components/TruckCard.tsx", line: 77, context: "Manual soft (matches sched-manual-bg)", matchesToken: "sched-manual-bg", prism: null },
+  { hex: "#00832D", file: "components/TruckCard.tsx", line: 78, context: "Departed strong (matches positive)", matchesToken: "positive / sched-departed", prism: null },
+  { hex: "#BFE0CB", file: "components/TruckCard.tsx", line: 78, context: "Departed medium", matchesToken: null, prism: null },
+  { hex: "#E7FBEF", file: "components/TruckCard.tsx", line: 78, context: "Departed soft (matches positive-bg)", matchesToken: "positive-bg / sched-departed-bg", prism: null },
+  { hex: "#784200", file: "components/TruckCard.tsx", line: 88, context: "In-progress strong", matchesToken: null, prism: "Off-spec brown" },
+  { hex: "#F5E3A8", file: "components/TruckCard.tsx", line: 88, context: "In-progress medium", matchesToken: null, prism: "Off-spec amber" },
+  { hex: "#FFF6D4", file: "components/TruckCard.tsx", line: 88, context: "In-progress soft", matchesToken: null, prism: "Off-spec amber" },
+];
+
+type Tab = "tokens" | "figma" | "adhoc" | "colors";
 
 export function Admin({ typefix = false }: { typefix?: boolean } = {}) {
   const [tab, setTab] = useState<Tab>("tokens");
@@ -263,6 +357,7 @@ export function Admin({ typefix = false }: { typefix?: boolean } = {}) {
               { id: "tokens", label: "Project tokens" },
               { id: "figma", label: "Figma mapping" },
               { id: "adhoc", label: "Ad-hoc usages" },
+              { id: "colors", label: "Colors" },
             ] as { id: Tab; label: string }[]
           ).map((t) => (
             <button
@@ -390,6 +485,122 @@ export function Admin({ typefix = false }: { typefix?: boolean } = {}) {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {tab === "colors" && (
+          <div className="flex flex-col gap-10">
+            <div>
+              <h2 className="text-title-lg text-ink mb-2">Foundation tokens</h2>
+              <p className="text-body-md text-ink-subdued mb-4 max-w-3xl">
+                Color tokens defined in <code className="font-mono">tailwind.config.js</code>, cross-checked
+                against Prism Foundations. Hex values come straight from the config; Prism names note the
+                upstream alias when one exists.
+              </p>
+              <div className="overflow-hidden rounded-card border border-line">
+                <table className="w-full text-left">
+                  <thead className="bg-surface-subdued text-body-sm-strong text-ink-subdued">
+                    <tr>
+                      <th className="px-4 py-3 w-20">Swatch</th>
+                      <th className="px-4 py-3">Token</th>
+                      <th className="px-4 py-3">Hex</th>
+                      <th className="px-4 py-3">Prism foundation</th>
+                      <th className="px-4 py-3">Role</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-body-sm text-ink">
+                    {COLOR_TOKENS.map((c) => (
+                      <tr key={c.name} className="border-t border-line align-top">
+                        <td className="px-4 py-3">
+                          <span
+                            className="inline-block size-8 rounded-button border border-line-strong"
+                            style={{ backgroundColor: c.hex }}
+                            aria-hidden
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="font-mono text-body-sm-strong">{c.name}</div>
+                          <div className="font-mono text-body-sm text-ink-subdued">{c.cls}</div>
+                        </td>
+                        <td className="px-4 py-3 font-mono uppercase">{c.hex}</td>
+                        <td className="px-4 py-3">
+                          {c.prism ? (
+                            <span className="font-mono">{c.prism}</span>
+                          ) : (
+                            <span className="text-ink-subdued">No direct Prism alias</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">{c.role}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <h2 className="text-title-lg text-ink mb-2">Inline hex literals</h2>
+              <p className="text-body-md text-ink-subdued mb-4 max-w-3xl">
+                Every <code className="font-mono">#xxxxxx</code> string found in the source outside the
+                tailwind config. Each is matched to its nearest foundation token, or flagged when no
+                Prism equivalent exists.
+              </p>
+              <div className="overflow-hidden rounded-card border border-line">
+                <table className="w-full text-left">
+                  <thead className="bg-surface-subdued text-body-sm-strong text-ink-subdued">
+                    <tr>
+                      <th className="px-4 py-3 w-20">Swatch</th>
+                      <th className="px-4 py-3">Hex</th>
+                      <th className="px-4 py-3">Location</th>
+                      <th className="px-4 py-3">Context</th>
+                      <th className="px-4 py-3">Nearest foundation token</th>
+                      <th className="px-4 py-3">Prism status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-body-sm text-ink">
+                    {INLINE_HEXES.map((h, i) => {
+                      const isPrism = h.matchesToken !== null;
+                      return (
+                        <tr key={i} className="border-t border-line align-top">
+                          <td className="px-4 py-3">
+                            <span
+                              className="inline-block size-8 rounded-button border border-line-strong"
+                              style={{ backgroundColor: h.hex }}
+                              aria-hidden
+                            />
+                          </td>
+                          <td className="px-4 py-3 font-mono uppercase">{h.hex}</td>
+                          <td className="px-4 py-3 font-mono text-ink-subdued">
+                            {h.file}:{h.line}
+                          </td>
+                          <td className="px-4 py-3">{h.context}</td>
+                          <td className="px-4 py-3">
+                            {h.matchesToken ? (
+                              <span className="font-mono">{h.matchesToken}</span>
+                            ) : (
+                              <span className="text-negative">— none —</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={
+                                "inline-block px-2 py-0.5 rounded-tag text-body-sm-strong " +
+                                (isPrism
+                                  ? "bg-positive-bg text-positive"
+                                  : "bg-negative-bg text-negative")
+                              }
+                            >
+                              {isPrism ? "matches token" : "off-spec"}
+                            </span>
+                            {h.prism && <span className="ml-2 text-ink-subdued">{h.prism}</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 

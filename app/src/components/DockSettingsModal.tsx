@@ -49,6 +49,8 @@ interface Props {
   }) => void;
   /** When true, labels the rename action as "Edit dock" instead. */
   editLabel?: boolean;
+  /** Tab to show when the modal opens. Defaults to "manage". */
+  initialTab?: Tab;
 }
 
 export function DockSettingsModal({
@@ -59,8 +61,12 @@ export function DockSettingsModal({
   receivingHours: receivingHoursProp,
   shippingHours: shippingHoursProp,
   onSave,
+  initialTab = "manage",
 }: Props) {
-  const [tab, setTab] = useState<Tab>("manage");
+  const [tab, setTab] = useState<Tab>(initialTab);
+  useEffect(() => {
+    if (open) setTab(initialTab);
+  }, [open, initialTab]);
   // Local draft state
   const [docks, setDocks] = useState<Dock[]>(docksProp);
   const [priorityOrder, setPriorityOrder] = useState<string[]>(priorityOrderProp);
@@ -222,8 +228,8 @@ export function DockSettingsModal({
           </div>
         </div>
 
-        {/* Content (scrollable) */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-8 pb-2">
+        {/* Content */}
+        <div className="flex-1 min-h-0 px-8 pb-2 flex flex-col">
           {tab === "manage" && (
             <ManageDocksTab
               docks={docks}
@@ -467,10 +473,10 @@ function ManageDocksTab({
   const isRenaming = !!renamingId;
   const lockUI = addingDock || isRenaming;
   return (
-    <div className="pt-1">
+    <div className="pt-1 flex-1 min-h-0 flex flex-col">
       <div
         className={cn(
-          "flex items-center justify-between py-3 sticky top-0 bg-white z-10 -mx-2 px-2",
+          "flex items-center justify-between py-3 bg-white",
           lockUI && "pointer-events-none",
         )}
       >
@@ -504,9 +510,10 @@ function ManageDocksTab({
       </div>
 
       {rearranging ? (
+        <div className="flex-1 min-h-0 overflow-y-auto mt-2 -mx-2 px-2">
         <div
           ref={containerRef}
-          className={cn("relative mt-2", addingDock && "opacity-40 pointer-events-none")}
+          className={cn("relative", addingDock && "opacity-40 pointer-events-none")}
           style={{ height: docks.length * REARRANGE_ROW_H }}
         >
           {docks.map((d, idx) => {
@@ -553,10 +560,12 @@ function ManageDocksTab({
             );
           })}
         </div>
+        </div>
       ) : (
         <>
         {isRenaming ? (
-          <div className="mt-2 rounded-card border border-line-hovered overflow-hidden bg-white">
+          <div className="mt-2 flex-1 min-h-0 rounded-card border border-line-hovered overflow-hidden bg-white">
+          <div className="h-full overflow-y-auto">
             {docks.map((d, idx) => {
               const rowRenaming = renamingId === d.id;
               const dimmed = !rowRenaming;
@@ -609,21 +618,23 @@ function ManageDocksTab({
               );
             })}
           </div>
+          </div>
         ) : (
         <div
           className={cn(
-            "mt-2 overflow-clip rounded-card border border-line-hovered bg-white",
+            "mt-2 flex-1 min-h-0 rounded-card border border-line-hovered bg-white overflow-hidden",
             addingDock && "opacity-40 pointer-events-none",
           )}
         >
+        <div className="h-full overflow-y-auto">
           <table className="w-full border-separate border-spacing-0 [&_th:first-child]:pl-4 [&_td:first-child]:pl-4 [&_th:last-child]:pr-4 [&_td:last-child]:pr-4">
             <thead>
               <tr>
-                <th className="sticky top-[60px] z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-left text-body-sm-strong text-ink">Active</th>
-                <th className="sticky top-[60px] z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-left text-body-sm-strong text-ink">Dock name</th>
-                <th className="sticky top-[60px] z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-left text-body-sm-strong text-ink">Dock ID</th>
-                <th className="sticky top-[60px] z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-left text-body-sm-strong text-ink whitespace-nowrap">Equipment eligibility</th>
-                <th className="sticky top-[60px] z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-right text-body-sm-strong text-ink">Actions</th>
+                <th className="sticky top-0 z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-left text-body-sm-strong text-ink">Active</th>
+                <th className="sticky top-0 z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-left text-body-sm-strong text-ink">Dock name</th>
+                <th className="sticky top-0 z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-left text-body-sm-strong text-ink">Dock ID</th>
+                <th className="sticky top-0 z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-left text-body-sm-strong text-ink whitespace-nowrap">Equipment eligibility</th>
+                <th className="sticky top-0 z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-right text-body-sm-strong text-ink">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -645,6 +656,7 @@ function ManageDocksTab({
               ))}
             </tbody>
           </table>
+        </div>
         </div>
         )}
         </>
@@ -768,7 +780,7 @@ function ManageDockRow({
             <EquipmentTooltip equipment={equipment}>
               <span className="inline-flex items-center gap-1.5 text-body-sm text-ink-subdued underline decoration-dotted decoration-ink-subdued underline-offset-2 cursor-default">
                 <Truck className="size-4" strokeWidth={1.75} />
-                {enabled}/{total}
+                {enabled} of {total}
               </span>
             </EquipmentTooltip>
           </td>
@@ -784,7 +796,7 @@ function ManageDockRow({
               }}
               className="size-7 inline-grid place-items-center rounded-button hover:bg-surface-hovered"
             >
-              <MoreHorizontal className="size-5 text-icon-subdued" />
+              <MoreHorizontal className="size-5 text-icon" />
             </button>
           </td>
         </>
@@ -943,8 +955,8 @@ function DockPriorityTab({
   }, [drag, priorityOrder, reorder]);
 
   return (
-    <div className="pt-1">
-      <div className="py-3 sticky top-0 bg-white z-10 -mx-2 px-2">
+    <div className="pt-1 flex-1 min-h-0 flex flex-col overflow-y-auto -mx-2 px-2">
+      <div className="py-3 sticky top-0 bg-white z-10">
         <p className="text-body-md-strong text-ink">Drag to assign priority</p>
         <p className="text-body-sm text-ink-subdued">
           Docks at the top of the list will be auto-assigned trucks first
@@ -1047,7 +1059,7 @@ function DockScheduleTab({
   setShip: (h: Hours) => void;
 }) {
   return (
-    <div className="pt-4 space-y-6">
+    <div className="pt-4 space-y-6 flex-1 min-h-0 overflow-y-auto">
       <HoursSection
         title="Receiving hours"
         subtitle="Hours trucks can be unloaded at this facility"

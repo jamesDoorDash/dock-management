@@ -188,7 +188,7 @@ function BlockedCard({
           className="shrink-0 size-6 grid place-items-center rounded hover:bg-black/5"
           aria-label="Delete block"
         >
-          <Trash2 className="size-4 text-icon-subdued" />
+          <Trash2 className="size-4 text-icon" />
         </button>
       )}
       {/* Right-edge resize handle (only in blocking mode) */}
@@ -273,6 +273,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
   // Drag-to-create blocked-time slot
   const [blockDraft, setBlockDraft] = useState<{
     dockId: string;
+    anchorMin: number;
     startMin: number;
     endMin: number;
   } | null>(null);
@@ -382,16 +383,22 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
       onBlockedActionAttempt?.("You can't block time in the past");
       return;
     }
-    setBlockDraft({ dockId, startMin: start, endMin: start + 15 });
+    setBlockDraft({ dockId, anchorMin: start, startMin: start, endMin: start + 15 });
     e.preventDefault();
   };
 
   useEffect(() => {
     if (!blockDraft) return;
     const onMove = (e: PointerEvent) => {
-      const end = snapXToMinute(e.clientX, "ceil");
-      if (end == null) return;
-      setBlockDraft((d) => (d ? { ...d, endMin: Math.max(d.startMin + 15, end) } : d));
+      const floor = snapXToMinute(e.clientX, "floor");
+      const ceil = snapXToMinute(e.clientX, "ceil");
+      if (floor == null || ceil == null) return;
+      setBlockDraft((d) => {
+        if (!d) return d;
+        const start = Math.min(d.anchorMin, floor);
+        const end = Math.max(d.anchorMin + 15, ceil);
+        return { ...d, startMin: start, endMin: end };
+      });
     };
     const onUp = () => {
       // Capture from closure so the side effect runs exactly once even under StrictMode.

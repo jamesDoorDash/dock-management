@@ -636,8 +636,7 @@ export function TruckCard({
                   const rect = menuBtnRef.current?.getBoundingClientRect();
                   if (rect) onMenuOpen?.(rect);
                 }}
-                className="shrink-0 size-6 grid place-items-center rounded hover:bg-black/5"
-                style={{ color: spec.subTextColor }}
+                className="shrink-0 size-6 grid place-items-center rounded hover:bg-black/5 text-icon"
                 aria-label={menuVariant === "info" ? "Additional info" : "More options"}
               >
                 {menuVariant === "info" ? (
@@ -745,7 +744,7 @@ export function TruckCard({
           className="self-start m-2 size-8 grid place-items-center rounded-button border border-line-strong bg-white hover:bg-surface-hovered"
           aria-label="More options"
         >
-          <MoreHorizontal className="size-4 text-icon-subdued" />
+          <MoreHorizontal className="size-4 text-icon" />
         </button>
       )}
     </div>

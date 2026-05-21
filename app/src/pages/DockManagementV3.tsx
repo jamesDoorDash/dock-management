@@ -58,6 +58,7 @@ export function DockManagementV3({
   const [zoom, setZoom] = useState<"compact" | "expanded">("compact");
   const [blockingMode, setBlockingMode] = useState(false);
   const [dockSettingsOpen, setDockSettingsOpen] = useState(false);
+  const [dockSettingsInitialTab, setDockSettingsInitialTab] = useState<"manage" | "priority" | "schedule">("manage");
   const [docks, setDocks] = useState<Dock[]>(DOCKS);
   const [priorityOrder, setPriorityOrder] = useState<string[]>(() => DOCKS.map((d) => d.id));
   /** Ordered list of on-hold row IDs. The last entry is always the empty "On hold" drop target. */
@@ -91,9 +92,11 @@ export function DockManagementV3({
   const [hoverSlot, setHoverSlot] = useState<{ dockId: string; startMinutes: number } | null>(null);
   const [menu, setMenu] = useState<{ truckId: string; anchor: DOMRect } | null>(null);
   const [detailTruckId, setDetailTruckId] = useState<string | null>(null);
-  /** Set when a drop on an in-progress truck needs user confirmation before applying. */
+  /** Set when a drop on an in-progress truck needs user confirmation before applying.
+   *  `mode: "reset"` reuses the same modal for "Reset to recommended" so an
+   *  in-progress truck can't be reassigned without confirmation. */
   const [pendingMove, setPendingMove] = useState<
-    | { truckId: string; fromDockId: string; toDockId: string }
+    | { truckId: string; fromDockId: string; toDockId: string; mode?: "move" | "reset" }
     | null
   >(null);
   /** Set when the drop position collides with another scheduled truck. */
@@ -164,10 +167,16 @@ export function DockManagementV3({
     const extras = activeDocks.filter((d) => !priorityOrder.includes(d.id));
     return [...inOrder, ...extras];
   }, [activeDocks, priorityOrder]);
-  // Auto-assignment layout for the current date — recomputed when date or blocked slots change
+  // Auto-assignment layout for the current date — recomputed when date or blocked slots change.
+  // Preview blocks (awaiting user confirmation) are excluded so the colliding truck stays put
+  // and the intersection stays visible until the user confirms.
+  const committedBlocked = useMemo(
+    () => blocked.filter((b) => !b.id.startsWith("blk-preview-")),
+    [blocked],
+  );
   const autoForDate = useMemo(
-    () => autoAssignAll(trucksForDate, priorityActiveDocks, blocked),
-    [trucksForDate, priorityActiveDocks, blocked],
+    () => autoAssignAll(trucksForDate, priorityActiveDocks, committedBlocked),
+    [trucksForDate, priorityActiveDocks, committedBlocked],
   );
   const autoById = useMemo(
     () => Object.fromEntries(autoForDate.map((a) => [a.truckId, a])) as Record<string, Assignment>,
@@ -551,7 +560,9 @@ export function DockManagementV3({
           hit
             ? {
                 dockId: hit.dockId,
-                startMinutes: locked ? lockedStartFor(drag.truckId) : hit.startMinutes,
+                startMinutes: locked
+                  ? lockedStartFor(drag.truckId)
+                  : Math.max(hit.startMinutes, CURRENT_TIME_MINUTES),
               }
             : null,
         );
@@ -595,7 +606,9 @@ export function DockManagementV3({
       // For everything else, store the cursor-snapped time so the user can
       // place the card before or after its appointment.
       const locked = isTruckInProgress(current.truckId);
-      const resolvedStart = locked ? truck.apptMinutes : hit.startMinutes;
+      const resolvedStart = locked
+        ? truck.apptMinutes
+        : Math.max(hit.startMinutes, CURRENT_TIME_MINUTES);
 
       const fromDockId =
         current.kind === "active" || current.kind === "pending"
@@ -651,13 +664,32 @@ export function DockManagementV3({
     };
   }, [drag, trucksById]);
 
-  const handleClearOverride = (truckId: string) => {
+  const applyClearOverride = (truckId: string) => {
     const original = autoById[truckId];
     if (!original) return;
     setAssignments((prev) => {
       const without = prev.filter((a) => a.truckId !== truckId);
       return [...without, original];
     });
+  };
+
+  const handleClearOverride = (truckId: string) => {
+    const original = autoById[truckId];
+    if (!original) return;
+    const current = assignments.find((a) => a.truckId === truckId);
+    const dockChanged = current ? current.dockId !== original.dockId : false;
+    // If the truck is being loaded/unloaded and resetting would move it to
+    // a different dock, confirm first — same modal as a manual drag-move.
+    if (dockChanged && isTruckInProgress(truckId)) {
+      setPendingMove({
+        truckId,
+        fromDockId: current!.dockId,
+        toDockId: original.dockId,
+        mode: "reset",
+      });
+      return;
+    }
+    applyClearOverride(truckId);
   };
 
   const isManuallyOverridden = (truckId: string) => {
@@ -704,7 +736,14 @@ export function DockManagementV3({
         blockingMode={blockingMode}
         onEnterBlockingMode={() => setBlockingMode(true)}
         onExitBlockingMode={() => setBlockingMode(false)}
-        onDockSettings={() => setDockSettingsOpen(true)}
+        onDockSettings={() => {
+          setDockSettingsInitialTab("manage");
+          setDockSettingsOpen(true);
+        }}
+        onEditHours={() => {
+          setDockSettingsInitialTab("schedule");
+          setDockSettingsOpen(true);
+        }}
         receivingHours={receivingHours}
         shippingHours={shippingHours}
       />
@@ -917,8 +956,14 @@ export function DockManagementV3({
             confirmLabel="Confirm"
             onCancel={() => setPendingMove(null)}
             onConfirm={() => {
-              const { truckId, toDockId } = pendingMove;
+              const { truckId, toDockId, mode } = pendingMove;
               setPendingMove(null);
+              if (mode === "reset") {
+                // Reset to recommended: drop the manual override entirely
+                // (the auto-assigned slot already has the right startMinutes).
+                applyClearOverride(truckId);
+                return;
+              }
               // Confirming an in-progress move may still land on top of
               // another truck — chain into the collision modal if so.
               const colliderId = findCollider(truckId, toDockId);
@@ -1031,6 +1076,7 @@ export function DockManagementV3({
       <DockSettingsModal
         open={dockSettingsOpen}
         onClose={() => setDockSettingsOpen(false)}
+        initialTab={dockSettingsInitialTab}
         editLabel={legendAttached}
         docks={docks}
         priorityOrder={priorityOrder}

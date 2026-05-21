@@ -38,6 +38,7 @@ interface Props {
   onEnterBlockingMode: () => void;
   onExitBlockingMode: () => void;
   onDockSettings?: () => void;
+  onEditHours?: () => void;
   receivingHours: Hours;
   shippingHours: Hours;
 }
@@ -50,20 +51,20 @@ function HoursRow({ label, range, onEdit }: { label: string; range: { startMinut
     return `${hour12}:00 ${period}`;
   };
   return (
-    <div className="flex items-center text-body-md">
-      <span className="text-ink-subdued">{label}</span>
-      <span className="ml-[2px] font-medium text-ink">
+    <>
+      <span className="text-body-md text-ink-subdued">{label}</span>
+      <span className="text-body-md font-medium text-ink justify-self-end">
         {fmt(range.startMinutes)} – {fmt(range.endMinutes)}
       </span>
       <button
         type="button"
         onClick={onEdit}
         aria-label={`Edit ${label.replace(/:$/, "").toLowerCase()}`}
-        className="ml-[4px] grid size-4 place-items-center text-ink hover:opacity-70"
+        className="grid size-4 place-items-center text-ink hover:opacity-70 justify-self-end"
       >
         <PrismEditLine16 className="size-4" />
       </button>
-    </div>
+    </>
   );
 }
 
@@ -80,6 +81,7 @@ export function PageHeaderV2({
   onEnterBlockingMode,
   onExitBlockingMode,
   onDockSettings,
+  onEditHours,
   receivingHours,
   shippingHours,
 }: Props) {
@@ -97,9 +99,9 @@ export function PageHeaderV2({
             Plan dock assignments for scheduled trucks
           </p>
         </div>
-        <div className="flex flex-col items-end gap-[5px]">
-          <HoursRow label="Receiving hours:" range={receivingHours} />
-          <HoursRow label="Shipping hours:" range={shippingHours} />
+        <div className="grid grid-cols-[auto_auto_auto] items-center gap-x-[4px] gap-y-[5px]">
+          <HoursRow label="Receiving hours:" range={receivingHours} onEdit={onEditHours} />
+          <HoursRow label="Shipping hours:" range={shippingHours} onEdit={onEditHours} />
         </div>
       </div>
 
