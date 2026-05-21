@@ -39,17 +39,11 @@ export type PrototypeVersion =
   | "v34"
   | "v35"
   | "v36"
-  | "v37";
+  | "v37"
+  | "v38";
 
 /** Versions promoted to the "Top contenders" shortlist. */
-export const TOP_CONTENDERS: PrototypeVersion[] = [
-  "v3",
-  "v6",
-  "v20",
-  "v34",
-  "v35",
-  "v36",
-];
+export const TOP_CONTENDERS: PrototypeVersion[] = ["v38"];
 
 export const VERSION_OPTIONS: { id: PrototypeVersion; label: string }[] = [
   { id: "v1", label: "V1: First draft" },
@@ -89,6 +83,7 @@ export const VERSION_OPTIONS: { id: PrototypeVersion; label: string }[] = [
   { id: "v35", label: "V35: Declutter" },
   { id: "v36", label: "V36: Name rearrange" },
   { id: "v37", label: "V37: Red late accent" },
+  { id: "v38", label: "V38: Design crit" },
 ];
 
 interface SidebarProps {
