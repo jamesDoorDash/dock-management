@@ -83,6 +83,8 @@ interface Props {
   typefix?: boolean;
   /** V35: declutter — hide direction arrows and partner-name underlines. */
   declutter?: boolean;
+  /** V37: color the late triangle + bold-late counter red. */
+  redLate?: boolean;
   /** Short label for the day after the viewed date (e.g. "May 14"), shown on past-midnight hour headers. */
   nextDayLabel?: string;
   /** Viewed date (ISO). Used as the trigger for auto-scrolling on day change. */
@@ -133,7 +135,8 @@ function BlockedCard({
       data-block
       onPointerDown={interactive ? onMoveStart : undefined}
       className={cn(
-        "absolute z-10 flex items-center justify-between pr-0.5 text-body-md font-medium overflow-hidden",
+        "absolute z-10 flex justify-between pr-0.5 text-body-md font-medium overflow-hidden",
+        density === "expanded" ? "items-start" : "items-center",
         !declutter && "bg-line text-ink",
         useInsetBar ? "rounded-lg pl-[13px]" : "border-2 rounded pl-2",
         !declutter && !useInsetBar && "border-[#b2b2b2]",
@@ -231,6 +234,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
     treatment,
     typefix,
     declutter,
+    redLate,
     nextDayLabel,
     dateIso,
     holdStartIndex,
@@ -528,8 +532,8 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                       <svg width="14" height="12" viewBox="0 0 14 12" fill="none">
                         <path
                           d="M7 11 L1.5 2 L12.5 2 Z"
-                          fill="#111318"
-                          stroke="#111318"
+                          fill="#6b7280"
+                          stroke="#6b7280"
                           strokeWidth="2"
                           strokeLinejoin="round"
                         />
@@ -537,8 +541,8 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                       {/* Bridge from triangle tip down through the header so the stem in the
                           grid (which sits behind the sticky header bg) appears continuous. */}
                       <div
-                        className="absolute left-1/2 -translate-x-1/2 w-0.5 bg-ink"
-                        style={{ top: 10, height: 6 }}
+                        className="absolute left-1/2 -translate-x-1/2 w-0.5"
+                        style={{ top: 10, height: 6, backgroundColor: "#6b7280" }}
                       />
                     </div>
                   )}
@@ -612,11 +616,12 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                   CURRENT_TIME_MINUTES >= SCHEDULE_START_MINUTES &&
                   CURRENT_TIME_MINUTES <= SCHEDULE_END_MINUTES && (
                     <div
-                      className="absolute pointer-events-none w-0.5 bg-ink -translate-x-1/2"
+                      className="absolute pointer-events-none w-0.5 -translate-x-1/2"
                       style={{
                         left: ((CURRENT_TIME_MINUTES - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH,
                         top: -3, // extend upward so the stem meets the triangle tip with no gap
                         bottom: 0,
+                        backgroundColor: "#6b7280",
                       }}
                     />
                   )}
@@ -801,6 +806,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                         treatment={treatment}
                         typefix={typefix}
                         declutter={declutter}
+                        redLate={redLate}
                         barStatus={barStatus}
                         showMenu={showMenu}
                         menuVariant={menuVariantByTruckId?.(a.truckId) ?? "more"}
@@ -823,6 +829,19 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                 DOCK_COL_WIDTH +
                 ((hoverSlot.startMinutes - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH;
               const inProgress = isInProgressTruckId?.(draggingTruckId) ?? false;
+              const departed = isDepartedTruckId?.(draggingTruckId) ?? false;
+              const dragTruck = trucksById[draggingTruckId];
+              // Overdue ETA: appt time is in the past but the truck still
+              // hasn't arrived. The flag sits on the current-time line (where
+              // the bar's nose rests) but keeps showing the appointment time
+              // — there's no arrival time yet, so the appt is still the
+              // meaningful number.
+              const overdueETA =
+                !!dragTruck &&
+                !inProgress &&
+                !departed &&
+                dragTruck.apptMinutes < CURRENT_TIME_MINUTES;
+              const flagMinutes = overdueETA ? dragTruck!.apptMinutes : hoverSlot.startMinutes;
               return (
                 <>
                   {/* Solid vertical stick — starts at the top of the dock rows and runs to
@@ -840,7 +859,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                       {inProgress ? "Arrival time" : "Appointment time"}
                     </span>
                     <span className="text-body-md-strong leading-tight mt-0.5">
-                      {formatTime(hoverSlot.startMinutes)}
+                      {formatTime(flagMinutes)}
                     </span>
                   </div>
                 </>

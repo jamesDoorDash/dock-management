@@ -38,7 +38,8 @@ export type PrototypeVersion =
   | "v33"
   | "v34"
   | "v35"
-  | "v36";
+  | "v36"
+  | "v37";
 
 /** Versions promoted to the "Top contenders" shortlist. */
 export const TOP_CONTENDERS: PrototypeVersion[] = [
@@ -87,6 +88,7 @@ export const VERSION_OPTIONS: { id: PrototypeVersion; label: string }[] = [
   { id: "v34", label: "V34: Typefix" },
   { id: "v35", label: "V35: Declutter" },
   { id: "v36", label: "V36: Name rearrange" },
+  { id: "v37", label: "V37: Red late accent" },
 ];
 
 interface SidebarProps {

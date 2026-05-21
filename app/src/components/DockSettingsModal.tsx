@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useLayoutEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   X,
   ListOrdered,
@@ -9,11 +10,21 @@ import {
   Plus,
   ArrowRight,
   ChevronDown,
+  Truck,
+  Check,
 } from "lucide-react";
-import type { Dock } from "../data/types";
+import type { Dock, DockEquipment, EquipmentType } from "../data/types";
+import { EQUIPMENT_TYPES, DEFAULT_DOCK_EQUIPMENT } from "../data/types";
 import { Tooltip } from "./Tooltip";
-import { PopoverMenu, type PopoverItem } from "./PopoverMenu";
+import { PopoverMenu, type PopoverSection } from "./PopoverMenu";
 import { cn } from "../lib/cn";
+
+function getEquipment(d: Dock): DockEquipment {
+  return d.equipment ?? DEFAULT_DOCK_EQUIPMENT;
+}
+function equipmentEnabledCount(eq: DockEquipment): number {
+  return EQUIPMENT_TYPES.reduce((n, t) => n + (eq[t.id] ? 1 : 0), 0);
+}
 
 type Tab = "manage" | "priority" | "schedule";
 
@@ -36,6 +47,8 @@ interface Props {
     receivingHours: Hours;
     shippingHours: Hours;
   }) => void;
+  /** When true, labels the rename action as "Edit dock" instead. */
+  editLabel?: boolean;
 }
 
 export function DockSettingsModal({
@@ -87,6 +100,16 @@ export function DockSettingsModal({
     setPriorityOrder((prev) => prev.filter((pid) => pid !== id));
   };
 
+  const toggleEquipment = (dockId: string, type: EquipmentType) => {
+    setDocks((prev) =>
+      prev.map((d) => {
+        if (d.id !== dockId) return d;
+        const current = getEquipment(d);
+        return { ...d, equipment: { ...current, [type]: !current[type] } };
+      }),
+    );
+  };
+
   const startRename = (d: Dock) => {
     setRenamingId(d.id);
     setRenameValue(d.label);
@@ -100,6 +123,8 @@ export function DockSettingsModal({
     }
     setRenamingId(null);
   };
+
+  const cancelRename = () => setRenamingId(null);
 
   const startAddDock = () => {
     setAddDockValue(`${nextDockNumber}`);
@@ -181,9 +206,9 @@ export function DockSettingsModal({
           <div
             className={cn(
               "mt-5 inline-flex w-full items-center rounded-button border border-line-hovered bg-white",
-              (addingDock || rearranging) && "opacity-40 pointer-events-none",
+              (addingDock || rearranging || renamingId) && "opacity-40 pointer-events-none",
             )}
-            aria-disabled={addingDock || rearranging || undefined}
+            aria-disabled={addingDock || rearranging || !!renamingId || undefined}
           >
             <TabButton active={tab === "manage"} onClick={() => setTab("manage")}>
               Manage docks
@@ -210,6 +235,7 @@ export function DockSettingsModal({
               setRenameValue={setRenameValue}
               startRename={startRename}
               commitRename={commitRename}
+              cancelRename={cancelRename}
               onToggle={handleToggle}
               onDelete={handleDelete}
               reorder={reorderDocks}
@@ -242,10 +268,10 @@ export function DockSettingsModal({
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={addingDock || rearranging}
+            disabled={addingDock || rearranging || !!renamingId}
             className={cn(
               "h-10 px-4 rounded-button text-body-md-strong",
-              addingDock || rearranging
+              addingDock || rearranging || renamingId
                 ? "bg-surface-strong text-icon-disabled cursor-not-allowed"
                 : "bg-ink text-white hover:opacity-90",
             )}
@@ -259,49 +285,77 @@ export function DockSettingsModal({
         open={!!menu}
         anchorRect={menu?.anchor ?? null}
         onClose={() => setMenu(null)}
-        items={dockMenuItems({
-          onPrint: () => {
-            /* prototype no-op */
-          },
-          onRename: () => {
-            if (!menu) return;
-            const d = docks.find((x) => x.id === menu.dockId);
-            if (d) startRename(d);
-          },
-          onDelete: () => menu && handleDelete(menu.dockId),
-        })}
+        sections={
+          menu
+            ? dockMenuSections({
+                equipment: getEquipment(
+                  docks.find((x) => x.id === menu.dockId) ?? docks[0],
+                ),
+                onToggleEquipment: (type) => toggleEquipment(menu.dockId, type),
+                onPrint: () => {
+                  /* prototype no-op */
+                },
+                onRename: () => {
+                  const d = docks.find((x) => x.id === menu.dockId);
+                  if (d) startRename(d);
+                },
+                onDelete: () => handleDelete(menu.dockId),
+              })
+            : []
+        }
       />
     </div>
   );
 }
 
-function dockMenuItems({
+function dockMenuSections({
+  equipment,
+  onToggleEquipment,
   onPrint,
   onRename,
   onDelete,
 }: {
+  equipment: DockEquipment;
+  onToggleEquipment: (type: EquipmentType) => void;
   onPrint: () => void;
   onRename: () => void;
   onDelete: () => void;
-}): PopoverItem[] {
+}): PopoverSection[] {
   return [
     {
-      id: "print",
-      label: "Print dock QR",
-      icon: <Printer className="size-5 text-ink" strokeWidth={1.75} />,
-      onSelect: onPrint,
+      id: "equipment",
+      title: "Equipment eligibility",
+      items: EQUIPMENT_TYPES.map((t) => ({
+        id: `equipment-${t.id}`,
+        label: t.label,
+        variant: "switch" as const,
+        checked: equipment[t.id],
+        onToggle: () => onToggleEquipment(t.id),
+      })),
     },
     {
-      id: "rename",
-      label: "Rename dock",
-      icon: <Pencil className="size-5 text-ink" strokeWidth={1.75} />,
-      onSelect: onRename,
-    },
-    {
-      id: "delete",
-      label: "Delete dock",
-      icon: <Trash2 className="size-5 text-ink" strokeWidth={1.75} />,
-      onSelect: onDelete,
+      id: "actions",
+      title: "Options",
+      items: [
+        {
+          id: "print",
+          label: "Print dock QR",
+          icon: <Printer className="size-5 text-ink" strokeWidth={1.75} />,
+          onSelect: onPrint,
+        },
+        {
+          id: "rename",
+          label: "Rename dock",
+          icon: <Pencil className="size-5 text-ink" strokeWidth={1.75} />,
+          onSelect: onRename,
+        },
+        {
+          id: "delete",
+          label: "Delete dock",
+          icon: <Trash2 className="size-5 text-ink" strokeWidth={1.75} />,
+          onSelect: onDelete,
+        },
+      ],
     },
   ];
 }
@@ -344,6 +398,7 @@ function ManageDocksTab({
   setRenameValue,
   startRename,
   commitRename,
+  cancelRename,
   onToggle,
   onDelete: _onDelete,
   reorder,
@@ -364,6 +419,7 @@ function ManageDocksTab({
   setRenameValue: (v: string) => void;
   startRename: (d: Dock) => void;
   commitRename: () => void;
+  cancelRename: () => void;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
   reorder: (from: number, to: number) => void;
@@ -408,15 +464,17 @@ function ManageDocksTab({
     };
   }, [drag, docks, reorder]);
 
+  const isRenaming = !!renamingId;
+  const lockUI = addingDock || isRenaming;
   return (
     <div className="pt-1">
       <div
         className={cn(
           "flex items-center justify-between py-3 sticky top-0 bg-white z-10 -mx-2 px-2",
-          addingDock && "pointer-events-none",
+          lockUI && "pointer-events-none",
         )}
       >
-        <p className={cn("text-body-md-strong text-ink", addingDock && "opacity-40")}>
+        <p className={cn("text-body-md-strong text-ink", lockUI && "opacity-40")}>
           {rearranging ? "Drag to rearrange dock order" : `${activeCount} active docks`}
         </p>
         {rearranging ? (
@@ -425,7 +483,7 @@ function ManageDocksTab({
             onClick={() => setRearranging(false)}
             className={cn(
               "h-9 px-3 rounded-button bg-ink text-body-sm-strong text-white hover:opacity-90",
-              addingDock && "opacity-40",
+              lockUI && "opacity-40",
             )}
           >
             Done rearranging
@@ -436,7 +494,7 @@ function ManageDocksTab({
             onClick={() => setRearranging(true)}
             className={cn(
               "h-9 px-3 rounded-button border border-line-strong bg-white text-body-sm-strong text-ink hover:bg-surface-hovered inline-flex items-center gap-1.5",
-              addingDock && "opacity-40",
+              lockUI && "opacity-40",
             )}
           >
             <ListOrdered className="size-4" />
@@ -496,27 +554,105 @@ function ManageDocksTab({
           })}
         </div>
       ) : (
-        <ul className={cn("py-1", addingDock && "opacity-40 pointer-events-none")}>
-          {docks.map((d) => (
-            <ManageDockRow
-              key={d.id}
-              dock={d}
-              rearranging={false}
-              isDragging={false}
-              isRenaming={renamingId === d.id}
-              renameValue={renameValue}
-              setRenameValue={setRenameValue}
-              commitRename={commitRename}
-              onToggle={() => onToggle(d.id)}
-              onMenuOpen={(rect) => onMenuOpen(d.id, rect)}
-            />
-          ))}
-        </ul>
+        <>
+        {isRenaming ? (
+          <div className="mt-2 rounded-card border border-line-hovered overflow-hidden bg-white">
+            {docks.map((d, idx) => {
+              const rowRenaming = renamingId === d.id;
+              const dimmed = !rowRenaming;
+              return (
+                <div
+                  key={d.id}
+                  className={cn(
+                    "flex items-center gap-2 px-4 h-14",
+                    idx !== docks.length - 1 && "border-b border-line",
+                    dimmed && "opacity-40 pointer-events-none",
+                  )}
+                >
+                  {rowRenaming ? (
+                    <>
+                      <input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") commitRename();
+                          if (e.key === "Escape") cancelRename();
+                        }}
+                        className="h-10 px-3 rounded-button border border-line-strong bg-white text-body-md-strong text-ink w-40 focus:outline-none focus:border-ink"
+                      />
+                      <button
+                        type="button"
+                        onClick={cancelRename}
+                        className="h-10 px-4 rounded-button border border-line-strong bg-white text-body-md-strong text-ink hover:bg-surface-hovered"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={commitRename}
+                        disabled={!renameValue.trim()}
+                        className={cn(
+                          "h-10 px-4 rounded-button text-body-md-strong",
+                          renameValue.trim()
+                            ? "bg-ink text-white hover:opacity-90"
+                            : "bg-surface-strong text-icon-disabled cursor-not-allowed",
+                        )}
+                      >
+                        Save
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-body-md-strong text-ink">{d.label}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+        <div
+          className={cn(
+            "mt-2 overflow-clip rounded-card border border-line-hovered bg-white",
+            addingDock && "opacity-40 pointer-events-none",
+          )}
+        >
+          <table className="w-full border-separate border-spacing-0 [&_th:first-child]:pl-4 [&_td:first-child]:pl-4 [&_th:last-child]:pr-4 [&_td:last-child]:pr-4">
+            <thead>
+              <tr>
+                <th className="sticky top-[60px] z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-left text-body-sm-strong text-ink">Active</th>
+                <th className="sticky top-[60px] z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-left text-body-sm-strong text-ink">Dock name</th>
+                <th className="sticky top-[60px] z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-left text-body-sm-strong text-ink">Dock ID</th>
+                <th className="sticky top-[60px] z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-left text-body-sm-strong text-ink whitespace-nowrap">Equipment eligibility</th>
+                <th className="sticky top-[60px] z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-right text-body-sm-strong text-ink">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {docks.map((d, idx) => (
+                <ManageDockRow
+                  key={d.id}
+                  dock={d}
+                  isLast={idx === docks.length - 1}
+                  isRenaming={false}
+                  hideExtraColumns={false}
+                  dimmed={false}
+                  renameValue={renameValue}
+                  setRenameValue={setRenameValue}
+                  commitRename={commitRename}
+                  cancelRename={cancelRename}
+                  onToggle={() => onToggle(d.id)}
+                  onMenuOpen={(rect) => onMenuOpen(d.id, rect)}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+        )}
+        </>
       )}
 
       {addingDock ? (
-        <div className="mt-3 flex items-center gap-3">
-          <span className="text-body-md-strong text-ink">Dock</span>
+        <div className="mt-3 flex items-center gap-2">
+          <span className="text-body-md-strong text-ink mr-1">Dock</span>
           <input
             autoFocus
             value={addDockValue}
@@ -527,6 +663,13 @@ function ManageDocksTab({
             }}
             className="h-10 px-3 rounded-button border border-line-strong bg-white text-body-md-strong text-ink w-40 focus:outline-none focus:border-ink"
           />
+          <button
+            type="button"
+            onClick={cancelAddDock}
+            className="h-10 px-4 rounded-button border border-line-strong bg-white text-body-md-strong text-ink hover:bg-surface-hovered"
+          >
+            Cancel
+          </button>
           <button
             type="button"
             onClick={commitAddDock}
@@ -540,19 +683,16 @@ function ManageDocksTab({
           >
             Add
           </button>
-          <button
-            type="button"
-            onClick={cancelAddDock}
-            className="h-10 px-4 rounded-button border border-line-strong bg-white text-body-md-strong text-ink hover:bg-surface-hovered"
-          >
-            Cancel
-          </button>
         </div>
       ) : (
         <button
           type="button"
           onClick={startAddDock}
-          className="mt-3 inline-flex items-center gap-1.5 text-body-md-strong text-ink hover:text-ink-subdued"
+          disabled={isRenaming}
+          className={cn(
+            "mt-3 inline-flex items-center gap-1.5 text-body-md-strong text-ink hover:text-ink-subdued",
+            isRenaming && "opacity-40 pointer-events-none",
+          )}
         >
           <Plus className="size-4" />
           Add dock
@@ -564,84 +704,164 @@ function ManageDocksTab({
 
 function ManageDockRow({
   dock,
-  rearranging,
-  isDragging,
+  isLast,
   isRenaming,
+  hideExtraColumns,
+  dimmed,
   renameValue,
   setRenameValue,
   commitRename,
+  cancelRename,
   onToggle,
   onMenuOpen,
-  onDragStart,
 }: {
   dock: Dock;
-  rearranging: boolean;
-  isDragging: boolean;
+  isLast: boolean;
   isRenaming: boolean;
+  hideExtraColumns: boolean;
+  dimmed: boolean;
   renameValue: string;
   setRenameValue: (v: string) => void;
   commitRename: () => void;
+  cancelRename: () => void;
   onToggle: () => void;
   onMenuOpen: (rect: DOMRect) => void;
-  onDragStart?: (e: React.PointerEvent) => void;
 }) {
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const shortcode = dock.uuid.slice(0, 4);
+  const equipment = getEquipment(dock);
+  const enabled = equipmentEnabledCount(equipment);
+  const total = EQUIPMENT_TYPES.length;
+  const tdBorder = isLast ? "" : "border-b border-line";
+  const tdBase = "px-3 py-3 text-body-md text-ink align-middle";
   return (
-    <li
-      onPointerDown={rearranging ? onDragStart : undefined}
-      className={cn(
-        rearranging
-          ? cn(
-              "flex items-center gap-4 px-4 h-12 mb-2 rounded-card border bg-white select-none cursor-grab active:cursor-grabbing touch-none",
-              isDragging ? "border-ink shadow-drag relative z-10" : "border-line",
-            )
-          : "flex items-center gap-3 py-2 border-b border-line last:border-b-0 select-none",
-      )}
-    >
-      {rearranging ? (
-        <SixDotGrip className="size-4 text-icon-subdued" />
-      ) : (
-        <Switch checked={dock.active} onChange={onToggle} disabled={rearranging} />
-      )}
-      {isRenaming ? (
-        <input
-          autoFocus
-          value={renameValue}
-          onChange={(e) => setRenameValue(e.target.value)}
-          onBlur={commitRename}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commitRename();
-            if (e.key === "Escape") commitRename();
-          }}
-          className="h-8 px-2 rounded-button border border-line-strong bg-white text-body-md-strong text-ink w-32 focus:outline-none focus:border-ink"
-        />
-      ) : (
-        <p className="text-body-md-strong text-ink">{dock.label}</p>
-      )}
-      <Tooltip label={dock.uuid}>
-        <span className="text-body-sm text-ink-subdued underline decoration-dotted decoration-ink-subdued underline-offset-2 cursor-default">
-          {shortcode}
-        </span>
-      </Tooltip>
-      {!rearranging && (
-        <div className="ml-auto flex items-center gap-1">
-          <button
-            ref={menuBtnRef}
-            type="button"
-            aria-label={`${dock.label} options`}
-            onClick={(e) => {
-              e.stopPropagation();
-              const rect = menuBtnRef.current?.getBoundingClientRect();
-              if (rect) onMenuOpen(rect);
+    <tr className={cn("select-none", dimmed && "opacity-40 pointer-events-none")}>
+      <td className={cn(tdBase, tdBorder)}>
+        <Switch checked={dock.active} onChange={onToggle} />
+      </td>
+      <td className={cn(tdBase, tdBorder)}>
+        {isRenaming ? (
+          <input
+            autoFocus
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitRename();
+              if (e.key === "Escape") cancelRename();
             }}
-            className="size-7 grid place-items-center rounded-button hover:bg-surface-hovered"
-          >
-            <MoreHorizontal className="size-5 text-icon-subdued" />
-          </button>
-        </div>
+            className="h-10 px-3 rounded-button border border-line-strong bg-white text-body-md-strong text-ink w-40 focus:outline-none focus:border-ink"
+          />
+        ) : (
+          <span className="text-body-md-strong text-ink">{dock.label}</span>
+        )}
+      </td>
+      {!hideExtraColumns && (
+        <>
+          <td className={cn(tdBase, tdBorder)}>
+            <Tooltip label={dock.uuid}>
+              <span className="text-body-sm text-ink-subdued underline decoration-dotted decoration-ink-subdued underline-offset-2 cursor-default">
+                {shortcode}
+              </span>
+            </Tooltip>
+          </td>
+          <td className={cn(tdBase, tdBorder)}>
+            <EquipmentTooltip equipment={equipment}>
+              <span className="inline-flex items-center gap-1.5 text-body-sm text-ink-subdued underline decoration-dotted decoration-ink-subdued underline-offset-2 cursor-default">
+                <Truck className="size-4" strokeWidth={1.75} />
+                {enabled}/{total}
+              </span>
+            </EquipmentTooltip>
+          </td>
+          <td className={cn(tdBase, tdBorder, "text-right")}>
+            <button
+              ref={menuBtnRef}
+              type="button"
+              aria-label={`${dock.label} options`}
+              onClick={(e) => {
+                e.stopPropagation();
+                const rect = menuBtnRef.current?.getBoundingClientRect();
+                if (rect) onMenuOpen(rect);
+              }}
+              className="size-7 inline-grid place-items-center rounded-button hover:bg-surface-hovered"
+            >
+              <MoreHorizontal className="size-5 text-icon-subdued" />
+            </button>
+          </td>
+        </>
       )}
-    </li>
+    </tr>
+  );
+}
+
+/**
+ * Rich tooltip showing eligible equipment as a checklist. Mirrors the styling
+ * of the simple Tooltip component but supports multi-line ReactNode content.
+ */
+function EquipmentTooltip({
+  equipment,
+  children,
+}: {
+  equipment: DockEquipment;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLSpanElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current) return;
+    const tr = triggerRef.current.getBoundingClientRect();
+    const tt = tooltipRef.current;
+    const w = tt?.offsetWidth ?? 240;
+    const h = tt?.offsetHeight ?? 160;
+    const above = tr.top - h - 8;
+    const below = tr.bottom + 8;
+    const top = above < 8 ? below : above;
+    const left = Math.max(8, Math.min(window.innerWidth - w - 8, tr.left + tr.width / 2 - w / 2));
+    setPos({ left, top });
+  }, [open]);
+
+  return (
+    <>
+      <span
+        ref={triggerRef}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        className="relative inline-flex"
+      >
+        {children}
+      </span>
+      {open &&
+        createPortal(
+          <div
+            ref={tooltipRef}
+            role="tooltip"
+            className="pointer-events-none fixed z-[100] px-3 py-2 rounded-button bg-ink text-white text-body-sm shadow-drag min-w-[220px]"
+            style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999 }}
+          >
+            <span className="block text-body-sm-strong mb-1">Eligible equipment</span>
+            <span className="block space-y-0.5">
+              {EQUIPMENT_TYPES.map((t) => {
+                const on = equipment[t.id];
+                return (
+                  <span key={t.id} className="flex items-center gap-2 whitespace-nowrap">
+                    {on ? (
+                      <Check className="size-4 shrink-0" strokeWidth={2} />
+                    ) : (
+                      <span className="size-4 shrink-0 opacity-30">—</span>
+                    )}
+                    <span className={cn(!on && "opacity-50 line-through")}>{t.label}</span>
+                  </span>
+                );
+              })}
+            </span>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 

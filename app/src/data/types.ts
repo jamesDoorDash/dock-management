@@ -41,6 +41,31 @@ export interface BlockedSlot {
   reason?: string;
 }
 
+export type EquipmentType =
+  | "truck_26"
+  | "truck_26_lift"
+  | "truck_53"
+  | "truck_53_drop"
+  | "sprinter";
+
+export const EQUIPMENT_TYPES: { id: EquipmentType; label: string }[] = [
+  { id: "truck_26", label: "26' truck" },
+  { id: "truck_26_lift", label: "26' truck with liftgate" },
+  { id: "truck_53", label: "53' truck" },
+  { id: "truck_53_drop", label: "53' truck with drop trailer" },
+  { id: "sprinter", label: "Sprinter van" },
+];
+
+export type DockEquipment = Record<EquipmentType, boolean>;
+
+export const DEFAULT_DOCK_EQUIPMENT: DockEquipment = {
+  truck_26: true,
+  truck_26_lift: true,
+  truck_53: true,
+  truck_53_drop: true,
+  sprinter: true,
+};
+
 export interface Dock {
   id: string;
   /** e.g. "Door 1" */
@@ -49,4 +74,6 @@ export interface Dock {
   uuid: string;
   /** Whether the dock is active and shown on the schedule. */
   active: boolean;
+  /** Per-equipment-type eligibility. Defaults to all enabled when omitted. */
+  equipment?: DockEquipment;
 }

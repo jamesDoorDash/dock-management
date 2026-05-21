@@ -38,15 +38,15 @@ export function formatLateness(min: number): string {
 }
 
 /**
- * Deterministic synthesized arrival lateness for prototype purposes. ~⅓ of
- * trucks are on-time; the rest are 5–110 minutes late. Hashed off the truck id
- * so the value is stable across renders.
+ * Synthesized arrival lateness for prototype purposes. Only a handful of
+ * curated truck IDs are late today — everyone else is on time — so the
+ * triangle-alert badging only fires on a few cards.
  */
+const LATE_TRUCK_IDS = new Set(["tr-gco-1", "tr-hm-ret", "tr-allpack"]);
 export function synthLateMinutes(truckId: string): number {
+  if (!LATE_TRUCK_IDS.has(truckId)) return 0;
   let h = 0;
   for (let i = 0; i < truckId.length; i++) h = (h * 31 + truckId.charCodeAt(i)) >>> 0;
-  const bucket = h % 100;
-  if (bucket < 35) return 0;
   return 5 + (h % 106);
 }
 
@@ -139,13 +139,13 @@ export function getBarRange(
   if (actualArrival <= nowMinutes) {
     return { startMin: actualArrival, widthMin: actualDepart - actualArrival };
   }
-  // Not yet arrived. If the appt is already past (overdue ETA, or in-progress
-  // by scheduled-block but synth-late puts actual arrival in the future), the
-  // bar's right edge tracks `now` so the visual reflects "the truck was due
-  // by now and still isn't here." Once the truck actually arrives, the
-  // Arrived branch above takes over and the whole bar snaps to actualArrival.
+  // Not yet arrived. If the appt is already past (overdue ETA), the bar's
+  // LEFT edge (its nose) rests on the current-time line and the whole bar
+  // pushes right as `now` advances — "should arrive any minute now, ETA
+  // keeps slipping." Once the truck actually arrives, the Arrived branch
+  // above takes over and the bar snaps to actualArrival.
   if (nowMinutes > scheduledStartMinutes) {
-    return { startMin: scheduledStartMinutes, widthMin: nowMinutes - scheduledStartMinutes };
+    return { startMin: nowMinutes, widthMin: truck.durationMinutes };
   }
   return { startMin: scheduledStartMinutes, widthMin: truck.durationMinutes };
 }

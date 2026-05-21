@@ -55,7 +55,11 @@ export function autoAssignAll(
   const result: Assignment[] = [];
   for (const t of sorted) {
     const want = visualOccupancy(t);
-    const blockedOk = (d: Dock) => !conflicts(blockBusy[d.id], want, 0);
+    // Blocks only conflict with the truck's scheduled span (the visible bar),
+    // not its projected lateness/overtime extension. A block placed near but
+    // not intersecting the rendered bar should not shove the truck.
+    const scheduled: [number, number] = [t.apptMinutes, t.apptMinutes + t.durationMinutes];
+    const blockedOk = (d: Dock) => !conflicts(blockBusy[d.id], scheduled, 0);
     // Prefer a dock that leaves the full turnaround gap from other trucks.
     let dock = docks.find(
       (d) => blockedOk(d) && !conflicts(truckBusy[d.id], want, TURNAROUND_GAP),

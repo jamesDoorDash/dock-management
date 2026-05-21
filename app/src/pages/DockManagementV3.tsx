@@ -44,7 +44,10 @@ export function DockManagementV3({
   treatment,
   typefix = false,
   declutter = false,
-}: { treatment?: Treatment; typefix?: boolean; declutter?: boolean } = {}) {
+  legendAttached = false,
+  redLate = false,
+  autoReassignLabel = false,
+}: { treatment?: Treatment; typefix?: boolean; declutter?: boolean; legendAttached?: boolean; redLate?: boolean; autoReassignLabel?: boolean } = {}) {
   const [dateIso, setDateIso] = useState<string>(TODAY_ISO);
   const [zoom, setZoom] = useState<"compact" | "expanded">("compact");
   const [blockingMode, setBlockingMode] = useState(false);
@@ -63,6 +66,22 @@ export function DockManagementV3({
   /** Card currently expanded by hover (non-sticky; clears on mouse leave). */
   const [hoverExpandedId, setHoverExpandedId] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState>({ kind: "idle" });
+  /** Horizontal center (in viewport px) of the schedule plot — used to center the floating legend
+   *  on the table instead of the full screen when a sidebar shifts the viewport center. */
+  const plotAreaRef = useRef<HTMLDivElement>(null);
+  const [plotCenterX, setPlotCenterX] = useState<number | null>(null);
+  useEffect(() => {
+    if (!legendAttached) return;
+    const measure = () => {
+      const el = plotAreaRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      setPlotCenterX(rect.left + rect.width / 2);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [legendAttached]);
   const [hoverSlot, setHoverSlot] = useState<{ dockId: string; startMinutes: number } | null>(null);
   const [menu, setMenu] = useState<{ truckId: string; anchor: DOMRect } | null>(null);
   const [detailTruckId, setDetailTruckId] = useState<string | null>(null);
@@ -182,6 +201,15 @@ export function DockManagementV3({
       if (!t) return 0;
       if (isTruckInProgress(truckId)) {
         return t.apptMinutes + synthLateMinutes(truckId);
+      }
+      // Overdue ETA — bar nose visually rests on the current-time line, so
+      // lock the drop position there too (instead of the past appt time).
+      if (
+        t.dateIso === TODAY_ISO &&
+        t.status !== "departed" &&
+        t.apptMinutes < CURRENT_TIME_MINUTES
+      ) {
+        return CURRENT_TIME_MINUTES;
       }
       return t.apptMinutes;
     },
@@ -628,7 +656,7 @@ export function DockManagementV3({
         shippingHours={shippingHours}
       />
 
-      <div className="relative flex flex-col">
+      <div ref={plotAreaRef} className="relative flex flex-col">
         <ScheduleGrid
         ref={gridRef}
         docks={displayDocks}
@@ -711,6 +739,7 @@ export function DockManagementV3({
         treatment={treatment}
         typefix={typefix}
         declutter={declutter}
+        redLate={redLate}
         />
 
         {/* Toast — sits just above the legend pill */}
@@ -723,8 +752,11 @@ export function DockManagementV3({
         )}
 
         {/* Centered floating legend pill */}
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
-          <div className="pointer-events-auto bg-white rounded-button border border-line shadow-drag px-4 py-2.5 flex items-center gap-6">
+        <div
+          className={"fixed z-20 pointer-events-none -translate-x-1/2 " + (legendAttached ? "bottom-0" : "bottom-6")}
+          style={{ left: legendAttached && plotCenterX != null ? plotCenterX : "50%" }}
+        >
+          <div className={"pointer-events-auto bg-white border border-line shadow-drag flex items-center " + (legendAttached ? "rounded-t-button border-b-0 px-7 py-4 gap-8" : "rounded-button px-4 py-2.5 gap-6")}>
             {blockingMode ? (
               <p className="text-body-md-strong text-ink">
                 Click and drag on the area you want to block
@@ -732,9 +764,9 @@ export function DockManagementV3({
             ) : (
               declutter ? (
                 <>
-                  <LegendSwatch color={STATUS_COLORS.scheduled.soft} ringColor={STATUS_COLORS.scheduled.strong} label="Scheduled" />
-                  <LegendSwatch color={STATUS_COLORS.in_progress.soft} ringColor={STATUS_COLORS.in_progress.strong} label="In progress" />
                   <LegendSwatch color={STATUS_COLORS.departed.soft} ringColor={STATUS_COLORS.departed.strong} label="Departed" />
+                  <LegendSwatch color={STATUS_COLORS.in_progress.soft} ringColor={STATUS_COLORS.in_progress.strong} label="In progress" />
+                  <LegendSwatch color={STATUS_COLORS.scheduled.soft} ringColor={STATUS_COLORS.scheduled.strong} label="Scheduled" />
                   <LegendSwatch color="#FFF0ED" ringColor="#B71000" label="Blocked time" />
                 </>
               ) : (
@@ -761,7 +793,7 @@ export function DockManagementV3({
             transform: "rotate(-1deg)",
           }}
         >
-          <TruckCard truck={draggingTruck} variant="scheduled" source={draggingSource} barStatus={draggingBarStatus} treatment={treatment} typefix={typefix} declutter={declutter} />
+          <TruckCard truck={draggingTruck} variant="scheduled" source={draggingSource} barStatus={draggingBarStatus} treatment={treatment} typefix={typefix} declutter={declutter} redLate={redLate} />
         </div>
       )}
 
@@ -784,7 +816,7 @@ export function DockManagementV3({
             ? [
                 {
                   id: "auto-assign",
-                  label: "Auto assign",
+                  label: autoReassignLabel ? "Reset to recommended" : "Auto assign",
                   icon: <RotateCw className="size-6 text-ink" strokeWidth={1.75} />,
                   onSelect: () => handleClearOverride(menu.truckId),
                 },
@@ -921,6 +953,7 @@ export function DockManagementV3({
       <DockSettingsModal
         open={dockSettingsOpen}
         onClose={() => setDockSettingsOpen(false)}
+        editLabel={legendAttached}
         docks={docks}
         priorityOrder={priorityOrder}
         receivingHours={receivingHours}

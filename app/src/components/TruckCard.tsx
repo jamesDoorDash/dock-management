@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { ArrowDownRight, ArrowUpRight, GripVertical, Info, MoreHorizontal } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, GripVertical, Info, MoreHorizontal, TriangleAlert } from "lucide-react";
 import type { Truck } from "../data/types";
 import { formatTime, formatTrailer, getStatusLine } from "../lib/time";
 import { CURRENT_TIME_MINUTES } from "../data/mock";
@@ -62,6 +62,8 @@ interface Props {
   typefix?: boolean;
   /** V35 Declutter: hide direction arrows and partner-name underlines. */
   declutter?: boolean;
+  /** V37: render the late triangle + bold-late counter in red. */
+  redLate?: boolean;
   /** V35: color status derived from the card's bar position vs the current-time line
    *  (departed = entirely past, in_progress = crossing now, scheduled = entirely future). */
   barStatus?: "scheduled" | "in_progress" | "departed";
@@ -241,7 +243,7 @@ function specFor(
         leftBar: {
           color: c.strong,
           width: 3,
-          inset: { left: 6, vertical: 4, gap: 4, radius: 2 },
+          inset: { left: 6, vertical: 4, gap: 6, radius: 2 },
         },
       };
     case "v21":
@@ -408,11 +410,15 @@ export function TruckCard({
   treatment = "default",
   typefix = false,
   declutter = false,
+  redLate = false,
   barStatus,
 }: Props) {
+  const lateColor = redLate ? "#B71000" : "#111318";
   const DirectionIcon = truck.direction === "inbound" ? ArrowDownRight : ArrowUpRight;
   const directionLabel = truck.direction === "inbound" ? "Inbound truck" : "Outbound truck";
   const menuBtnRef = useRef<HTMLButtonElement>(null);
+  const isLate =
+    getStatusLine(truck, CURRENT_TIME_MINUTES, source === "departed").late !== "";
 
   // V35: color cards by where their bar sits relative to the current-time line.
   // `barStatus` is computed by the grid (which owns the bar layout). When it's
@@ -494,6 +500,13 @@ export function TruckCard({
               />
             )}
             {!declutter && <DirectionIcon className="size-3.5 shrink-0" />}
+            {isLate && (
+              <TriangleAlert
+                className="size-3.5 shrink-0"
+                style={{ color: lateColor }}
+                aria-label="Late"
+              />
+            )}
             <span className="truncate">{truck.partner}</span>
           </span>
         </button>
@@ -609,7 +622,7 @@ export function TruckCard({
 
           {typefix ? (
             <>
-              <p className="text-[12px] truncate" style={{ color: spec.subTextColor }}>
+              <p className="text-body-sm truncate" style={{ color: spec.subTextColor }}>
                 {(() => {
                   const s = getStatusLine(truck, CURRENT_TIME_MINUTES, source === "departed");
                   return (
@@ -618,14 +631,19 @@ export function TruckCard({
                       {s.late && (
                         <>
                           {" · "}
-                          <span className="font-bold text-ink">{s.late}</span>
+                          <TriangleAlert
+                            className="inline size-3.5 align-[-2px] mr-1"
+                            style={{ color: lateColor }}
+                            aria-label="Late"
+                          />
+                          <span className="font-bold" style={{ color: lateColor }}>{s.late}</span>
                         </>
                       )}
                     </>
                   );
                 })()}
               </p>
-              <p className="text-[12px] truncate" style={{ color: spec.subTextColor }}>
+              <p className="text-body-sm truncate" style={{ color: spec.subTextColor }}>
                 {formatTrailer(truck.trailerSize, truck.parcelCount)}
                 {" · "}
                 {truck.loadType === "floor" ? "Floor loaded" : "Palletized"}
@@ -633,10 +651,10 @@ export function TruckCard({
             </>
           ) : (
             <>
-              <p className="text-[12px] truncate" style={{ color: spec.subTextColor }}>
+              <p className="text-body-sm truncate" style={{ color: spec.subTextColor }}>
                 {formatTime(truck.apptMinutes)} {arrivalLabel}
               </p>
-              <p className="text-[12px] truncate" style={{ color: spec.subTextColor }}>
+              <p className="text-body-sm truncate" style={{ color: spec.subTextColor }}>
                 {formatTrailer(truck.trailerSize, truck.parcelCount)}
               </p>
               <span
