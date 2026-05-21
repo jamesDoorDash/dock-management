@@ -15,7 +15,6 @@ const DENSITY = {
 } as const;
 
 /** Extra bottom space so the last dock row clears the floating legend pill with breathing room. */
-const SCROLL_BOTTOM_PADDING = 96; // 80 for legend area + 16px breathing room
 /** No extra whitespace past the last hour — chart ends at 5 AM tomorrow. */
 const SCROLL_RIGHT_PADDING = 0;
 
@@ -253,7 +252,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
   const scrollerRef = useRef<HTMLDivElement>(null);
   const proxyScrollbarRef = useRef<HTMLDivElement>(null);
   // Measure the scroller height so we can decide whether the bottom spacer is needed
-  const [scrollerHeight, setScrollerHeight] = useState(0);
+  const [, setScrollerHeight] = useState(0);
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;

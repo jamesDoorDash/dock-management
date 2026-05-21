@@ -9,7 +9,7 @@ import { TruckDetailSheet } from "../components/TruckDetailSheet";
 import { ErrorModal } from "../components/ErrorModal";
 import { BLOCKED_SLOTS, CURRENT_TIME_MINUTES, DOCKS, FACILITY, TODAY_ISO, TRUCKS } from "../data/mock";
 import type { Assignment, BlockedSlot, Dock, Truck } from "../data/types";
-import { autoAssignAll, visualOccupancy } from "../lib/autoAssign";
+import { autoAssignAll } from "../lib/autoAssign";
 import { getBarRange, synthLateMinutes, synthStayOvertimeMinutes } from "../lib/time";
 import { cn } from "../lib/cn";
 
@@ -845,7 +845,6 @@ export function DockManagementV3({
       {(() => {
         if (!pendingMove) return null;
         const truck = trucksById[pendingMove.truckId];
-        const fromLabel = docks.find((d) => d.id === pendingMove.fromDockId)?.label ?? "this dock";
         const verb = truck?.direction === "outbound" ? "loaded" : "unloaded";
         return (
           <ErrorModal
