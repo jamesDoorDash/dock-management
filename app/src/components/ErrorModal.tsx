@@ -14,6 +14,8 @@ interface Props {
   confirmLabel?: string;
   /** "destructive" paints the Confirm button red for irreversible / dangerous actions. */
   confirmTone?: ConfirmTone;
+  /** When false, the dark overlay is invisible so content behind the modal stays visible. Default true. */
+  dimBackdrop?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -33,6 +35,7 @@ export function ErrorModal({
   cancelLabel = "Cancel",
   confirmLabel = "Confirm",
   confirmTone = "default",
+  dimBackdrop = true,
   onCancel,
   onConfirm,
 }: Props) {
@@ -47,7 +50,7 @@ export function ErrorModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div
         className="absolute inset-0"
-        style={{ backgroundColor: "#19191980" }}
+        style={{ backgroundColor: dimBackdrop ? "#19191980" : "transparent" }}
         onClick={onCancel}
       />
       <div

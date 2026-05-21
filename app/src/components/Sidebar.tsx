@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Truck, CalendarClock, Undo2, Container, Settings, ChevronDown, ChevronsLeft } from "lucide-react";
+import { Truck, CalendarClock, Undo2, Container, Settings, ChevronDown, ChevronUp, ChevronsLeft } from "lucide-react";
 import { cn } from "../lib/cn";
 
 export type PrototypeVersion =
@@ -40,10 +40,11 @@ export type PrototypeVersion =
   | "v35"
   | "v36"
   | "v37"
-  | "v38";
+  | "v38"
+  | "v39";
 
 /** Versions promoted to the "Top contenders" shortlist. */
-export const TOP_CONTENDERS: PrototypeVersion[] = ["v38"];
+export const TOP_CONTENDERS: PrototypeVersion[] = ["v39"];
 
 export const VERSION_OPTIONS: { id: PrototypeVersion; label: string }[] = [
   { id: "v1", label: "V1: First draft" },
@@ -84,6 +85,7 @@ export const VERSION_OPTIONS: { id: PrototypeVersion; label: string }[] = [
   { id: "v36", label: "V36: Name rearrange" },
   { id: "v37", label: "V37: Red late accent" },
   { id: "v38", label: "V38: Design crit" },
+  { id: "v39", label: "V39: Post Crit" },
 ];
 
 interface SidebarProps {
@@ -102,6 +104,8 @@ const NAV_ITEMS = [
 ];
 
 export function Sidebar({ version, onVersionChange, adminOpen, onToggleAdmin }: SidebarProps) {
+  const [trucksOpen, setTrucksOpen] = useState(true);
+  const nestedTrucks = version === "v39";
   return (
     <aside className="w-[256px] shrink-0 border-r border-line bg-surface flex flex-col">
       {/* Brand */}
@@ -130,35 +134,113 @@ export function Sidebar({ version, onVersionChange, adminOpen, onToggleAdmin }: 
 
       {/* Nav */}
       <nav className="flex-1 px-4 pt-3 overflow-y-auto">
-        {NAV_ITEMS.map((item) => {
-          const Icon = item.icon;
-          const isActive =
-            item.key === "admin" ? adminOpen : item.key === "dock" && !adminOpen;
-          const onClick =
-            item.key === "admin"
-              ? onToggleAdmin
-              : item.key === "dock" && adminOpen
-              ? onToggleAdmin
-              : undefined;
-          return (
+        {nestedTrucks ? (
+          <>
+            <div>
+              <button
+                type="button"
+                onClick={() => setTrucksOpen((v) => !v)}
+                className={cn(
+                  "w-full h-12 flex items-center gap-3 px-3 rounded-button text-left",
+                  "text-ink-subdued hover:bg-surface-hovered hover:text-ink",
+                )}
+              >
+                <Truck className="size-[18px] text-icon-subdued" />
+                <span className="flex-1 text-body-md">Trucks</span>
+                {trucksOpen ? (
+                  <ChevronUp className="size-4 text-icon-subdued" />
+                ) : (
+                  <ChevronDown className="size-4 text-icon-subdued" />
+                )}
+              </button>
+              {trucksOpen && (
+                <div className="pb-1">
+                  {[
+                    { key: "inbound", label: "Inbound" },
+                    { key: "outbound", label: "Outbound" },
+                    { key: "dock", label: "Dock management" },
+                  ].map((child) => {
+                    const childActive = !adminOpen && child.key === "dock";
+                    const onChildClick =
+                      child.key === "dock" && adminOpen ? onToggleAdmin : undefined;
+                    return (
+                      <button
+                        key={child.key}
+                        type="button"
+                        onClick={onChildClick}
+                        className={cn(
+                          "ml-10 w-[calc(100%-2.5rem)] h-10 flex items-center px-3 rounded-button text-left",
+                          childActive
+                            ? "bg-surface-hovered text-ink"
+                            : "text-ink-subdued hover:bg-surface-hovered hover:text-ink",
+                        )}
+                      >
+                        <span className={cn("text-body-md", childActive && "font-bold text-ink")}>
+                          {child.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
             <button
-              key={item.label}
               type="button"
-              onClick={onClick}
               className={cn(
                 "w-full h-12 flex items-center gap-3 px-3 rounded-button text-left",
-                isActive
+                "text-ink-subdued hover:bg-surface-hovered hover:text-ink",
+              )}
+            >
+              <Undo2 className="size-[18px] text-icon-subdued" />
+              <span className="flex-1 text-body-md">Returns</span>
+            </button>
+            <button
+              type="button"
+              onClick={onToggleAdmin}
+              className={cn(
+                "w-full h-12 flex items-center gap-3 px-3 rounded-button text-left",
+                adminOpen
                   ? "bg-surface-hovered text-ink"
                   : "text-ink-subdued hover:bg-surface-hovered hover:text-ink",
               )}
             >
-              <Icon className={cn("size-[18px]", isActive ? "text-ink" : "text-icon-subdued")} />
-              <span className={cn("flex-1 text-body-md", isActive && "font-bold text-ink")}>
-                {item.label}
+              <Settings className={cn("size-[18px]", adminOpen ? "text-ink" : "text-icon-subdued")} />
+              <span className={cn("flex-1 text-body-md", adminOpen && "font-bold text-ink")}>
+                Admin
               </span>
             </button>
-          );
-        })}
+          </>
+        ) : (
+          NAV_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const isActive =
+              item.key === "admin" ? adminOpen : item.key === "dock" && !adminOpen;
+            const onClick =
+              item.key === "admin"
+                ? onToggleAdmin
+                : item.key === "dock" && adminOpen
+                ? onToggleAdmin
+                : undefined;
+            return (
+              <button
+                key={item.label}
+                type="button"
+                onClick={onClick}
+                className={cn(
+                  "w-full h-12 flex items-center gap-3 px-3 rounded-button text-left",
+                  isActive
+                    ? "bg-surface-hovered text-ink"
+                    : "text-ink-subdued hover:bg-surface-hovered hover:text-ink",
+                )}
+              >
+                <Icon className={cn("size-[18px]", isActive ? "text-ink" : "text-icon-subdued")} />
+                <span className={cn("flex-1 text-body-md", isActive && "font-bold text-ink")}>
+                  {item.label}
+                </span>
+              </button>
+            );
+          })
+        )}
       </nav>
 
       <PrototypeVersionPicker version={version} onVersionChange={onVersionChange} />

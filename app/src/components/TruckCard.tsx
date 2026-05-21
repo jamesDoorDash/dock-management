@@ -64,6 +64,8 @@ interface Props {
   declutter?: boolean;
   /** V37: render the late triangle + bold-late counter in red. */
   redLate?: boolean;
+  /** V39: replace the colored left strip with a colored GripVertical (prism) icon. */
+  prismIcon?: boolean;
   /** V35: color status derived from the card's bar position vs the current-time line
    *  (departed = entirely past, in_progress = crossing now, scheduled = entirely future). */
   barStatus?: "scheduled" | "in_progress" | "departed";
@@ -411,6 +413,7 @@ export function TruckCard({
   typefix = false,
   declutter = false,
   redLate = false,
+  prismIcon = false,
   barStatus,
 }: Props) {
   const lateColor = redLate ? "#B71000" : "#111318";
@@ -444,14 +447,26 @@ export function TruckCard({
         )}
         style={{ ...spec.containerStyle, borderRadius: spec.radius ?? 8 }}
       >
-        {spec.leftBar && !compactInset && (
+        {spec.leftBar && prismIcon && (
+          <span
+            aria-hidden
+            className="shrink-0 self-start h-8 flex items-center justify-center"
+            style={{
+              width: (compactInset?.left ?? 0) + 16 + (compactInset?.gap ?? 0),
+              color: spec.leftBar.color,
+            }}
+          >
+            <GripVertical className="size-4" strokeWidth={2.25} />
+          </span>
+        )}
+        {spec.leftBar && !prismIcon && !compactInset && (
           <span
             aria-hidden
             className="shrink-0"
             style={{ width: spec.leftBar.width, backgroundColor: spec.leftBar.color }}
           />
         )}
-        {spec.leftBar && compactInset && (
+        {spec.leftBar && !prismIcon && compactInset && (
           <>
             <span
               aria-hidden
@@ -529,6 +544,20 @@ export function TruckCard({
         {(() => {
           const inset = spec.leftBar?.inset;
           if (!spec.leftBar) return null;
+          if (prismIcon) {
+            return (
+              <span
+                aria-hidden
+                className="shrink-0 self-start flex items-start justify-center pt-1.5"
+                style={{
+                  width: (inset?.left ?? 0) + 16 + (inset?.gap ?? 0),
+                  color: spec.leftBar.color,
+                }}
+              >
+                <GripVertical className="size-4" strokeWidth={2.25} />
+              </span>
+            );
+          }
           if (!inset) {
             return (
               <span

@@ -22,7 +22,11 @@ export const GRID_CONSTANTS = { DOCK_COL_WIDTH, HEADER_HEIGHT, DENSITY };
 
 export interface ScheduleGridHandle {
   /** Hit-test a viewport (clientX, clientY) point. Returns the dock + start minutes for the slot it falls into, or null. */
-  hitTest: (clientX: number, clientY: number) => { dockId: string; startMinutes: number } | null;
+  hitTest: (
+    clientX: number,
+    clientY: number,
+    extraSnapMinutes?: number[],
+  ) => { dockId: string; startMinutes: number } | null;
   /** Scroll horizontally so the hour boundary before "now" sits at the left edge. */
   scrollToCurrentTime: () => void;
 }
@@ -84,6 +88,8 @@ interface Props {
   declutter?: boolean;
   /** V37: color the late triangle + bold-late counter red. */
   redLate?: boolean;
+  /** V39: swap colored left strip for a colored prism (GripVertical) icon. */
+  prismIcon?: boolean;
   /** Short label for the day after the viewed date (e.g. "May 14"), shown on past-midnight hour headers. */
   nextDayLabel?: string;
   /** Viewed date (ISO). Used as the trigger for auto-scrolling on day change. */
@@ -234,6 +240,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
     typefix,
     declutter,
     redLate,
+    prismIcon,
     nextDayLabel,
     dateIso,
     holdStartIndex,
@@ -452,7 +459,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
 
   useImperativeHandle(ref, () => ({
     scrollToCurrentTime,
-    hitTest(clientX, clientY) {
+    hitTest(clientX, clientY, extraSnapMinutes) {
       const el = gridRef.current;
       if (!el) return null;
       const rect = el.getBoundingClientRect();
@@ -461,10 +468,16 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
       if (x < 0 || y < 0 || x > totalWidth || y > totalHeight) return null;
       const dockIndex = Math.floor(y / ROW_HEIGHT);
       if (dockIndex < 0 || dockIndex >= docks.length) return null;
-      // Snap to 15-min increments
-      const minutesFromStart = (x / HOUR_WIDTH) * 60;
-      const snapped = Math.round(minutesFromStart / 15) * 15;
-      const startMinutes = SCHEDULE_START_MINUTES + snapped;
+      // Snap to 15-min increments, plus any extra snap targets (e.g. a truck's
+      // appointment time) that may not fall on a 15-min boundary.
+      const rawMinutes = SCHEDULE_START_MINUTES + (x / HOUR_WIDTH) * 60;
+      const candidates = [
+        SCHEDULE_START_MINUTES + Math.round((rawMinutes - SCHEDULE_START_MINUTES) / 15) * 15,
+        ...(extraSnapMinutes ?? []),
+      ];
+      const startMinutes = candidates.reduce((best, c) =>
+        Math.abs(c - rawMinutes) < Math.abs(best - rawMinutes) ? c : best,
+      );
       return { dockId: docks[dockIndex].id, startMinutes };
     },
   }));
@@ -806,6 +819,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                         typefix={typefix}
                         declutter={declutter}
                         redLate={redLate}
+                        prismIcon={prismIcon}
                         barStatus={barStatus}
                         showMenu={showMenu}
                         menuVariant={menuVariantByTruckId?.(a.truckId) ?? "more"}
@@ -824,23 +838,21 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
             {/* Appointment-time guide — overlays the whole chart (above the sticky header)
                 so labels and the stick aren't clipped. Rendered last so it z-stacks on top. */}
             {hoverSlot && draggingTruckId && (() => {
-              const guideX =
-                DOCK_COL_WIDTH +
-                ((hoverSlot.startMinutes - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH;
               const inProgress = isInProgressTruckId?.(draggingTruckId) ?? false;
               const departed = isDepartedTruckId?.(draggingTruckId) ?? false;
               const dragTruck = trucksById[draggingTruckId];
-              // Overdue ETA: appt time is in the past but the truck still
-              // hasn't arrived. The flag sits on the current-time line (where
-              // the bar's nose rests) but keeps showing the appointment time
-              // — there's no arrival time yet, so the appt is still the
-              // meaningful number.
-              const overdueETA =
-                !!dragTruck &&
-                !inProgress &&
-                !departed &&
-                dragTruck.apptMinutes < CURRENT_TIME_MINUTES;
-              const flagMinutes = overdueETA ? dragTruck!.apptMinutes : hoverSlot.startMinutes;
+              // Arrived trucks are locked to their arrival time — the flag
+              // tracks the (locked) hoverSlot. Every other status shows the
+              // appointment time at a fixed position even as the card is
+              // rearranged before or after that time.
+              const flagMinutes = inProgress
+                ? hoverSlot.startMinutes
+                : dragTruck?.apptMinutes ?? hoverSlot.startMinutes;
+              const guideX =
+                DOCK_COL_WIDTH +
+                ((flagMinutes - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH;
+              // (departed never drags, but keep the flag silent if it ever did)
+              if (departed) return null;
               return (
                 <>
                   {/* Solid vertical stick — starts at the top of the dock rows and runs to

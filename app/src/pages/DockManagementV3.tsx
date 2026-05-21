@@ -39,6 +39,11 @@ type DragState =
     };
 
 const DRAG_THRESHOLD = 5; // pixels
+// Shift the dashed drop indicator a constant up-and-left from the floating
+// card's top-left corner — independent of where the user grabbed the card —
+// so the indicator always peeks out in the same spot relative to the card.
+const DRAG_INDICATOR_OFFSET_X = 12; // pixels — left of card's left edge
+const DRAG_INDICATOR_OFFSET_Y = 16; // pixels — above card's top edge
 
 export function DockManagementV3({
   treatment,
@@ -47,7 +52,8 @@ export function DockManagementV3({
   legendAttached = false,
   redLate = false,
   autoReassignLabel = false,
-}: { treatment?: Treatment; typefix?: boolean; declutter?: boolean; legendAttached?: boolean; redLate?: boolean; autoReassignLabel?: boolean } = {}) {
+  prismIcon = false,
+}: { treatment?: Treatment; typefix?: boolean; declutter?: boolean; legendAttached?: boolean; redLate?: boolean; autoReassignLabel?: boolean; prismIcon?: boolean } = {}) {
   const [dateIso, setDateIso] = useState<string>(TODAY_ISO);
   const [zoom, setZoom] = useState<"compact" | "expanded">("compact");
   const [blockingMode, setBlockingMode] = useState(false);
@@ -92,7 +98,13 @@ export function DockManagementV3({
   >(null);
   /** Set when the drop position collides with another scheduled truck. */
   const [pendingCollision, setPendingCollision] = useState<
-    | { truckId: string; toDockId: string; colliderTruckId: string }
+    | {
+        truckId: string;
+        toDockId: string;
+        colliderTruckId: string;
+        /** Snapshot of assignments before the preview move, so Cancel can restore. */
+        previousAssignments: Assignment[];
+      }
     | null
   >(null);
   /** Set when a new blocked-time slot intersects with a scheduled truck. */
@@ -100,6 +112,8 @@ export function DockManagementV3({
     | {
         draft: { dockId: string; startMinutes: number; durationMinutes: number };
         colliderTruckId: string;
+        /** Id of the preview block rendered while the modal is open. */
+        previewBlockId: string;
       }
     | null
   >(null);
@@ -365,7 +379,7 @@ export function DockManagementV3({
   );
 
   const applyMove = useCallback(
-    (truckId: string, toDockId: string) => {
+    (truckId: string, toDockId: string, startMinutes?: number) => {
       const truck = trucksById[truckId];
       if (!truck) return;
       // Dropping into the trailing empty hold slot "consumes" it — it stays
@@ -373,14 +387,16 @@ export function DockManagementV3({
       if (toDockId === holdEmptyId) {
         setHoldSlotIds((prev) => [...prev, `hold-${prev.length + 1}`]);
       }
-      // Store the scheduled appt time; getBarRange shifts the visual bar to
-      // actualArrival for arrived trucks, so the card stays put across docks
-      // without us having to overload the assignment's stored start time.
+      // For arrived trucks the start is locked to the scheduled appt time and
+      // getBarRange shifts the visual bar to actualArrival. For non-arrived
+      // trucks the caller may pass a cursor-driven start time so the card can
+      // be placed before or after its appointment.
+      const resolvedStart = startMinutes ?? truck.apptMinutes;
       setAssignments((prev) => {
         const without = prev.filter((a) => a.truckId !== truckId);
         return [
           ...without,
-          { truckId, dockId: toDockId, startMinutes: truck.apptMinutes, source: "manual" },
+          { truckId, dockId: toDockId, startMinutes: resolvedStart, source: "manual" },
         ];
       });
     },
@@ -392,14 +408,14 @@ export function DockManagementV3({
    * range collides with the dragged truck, or null if there's no collision.
    */
   const findCollider = useCallback(
-    (truckId: string, toDockId: string): string | null => {
+    (truckId: string, toDockId: string, startMinutes?: number): string | null => {
       const truck = trucksById[truckId];
       if (!truck) return null;
       // Compare actually-rendered bar footprints, not visualOccupancy's union
       // of scheduled+actual spans. A future-ETA truck with synth stay-overtime
       // would otherwise report a tail past its visible bar end and cause a
       // false collision when dropping another truck flush behind it.
-      const aBar = getBarRange(truck, truck.apptMinutes, CURRENT_TIME_MINUTES);
+      const aBar = getBarRange(truck, startMinutes ?? truck.apptMinutes, CURRENT_TIME_MINUTES);
       const aStart = aBar.startMin;
       const aEnd = aBar.startMin + aBar.widthMin;
       for (const a of assignments) {
@@ -517,9 +533,27 @@ export function DockManagementV3({
         (drag.kind === "pending" &&
           Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) >= DRAG_THRESHOLD);
       if (pastThreshold && truck) {
-        const hit = gridRef.current?.hitTest(e.clientX, e.clientY);
+        // Hit-test relative to the floating card's top-left, not the cursor,
+        // so the offset is the same no matter where on the card the user
+        // grabbed.
+        const cardLeft = e.clientX - drag.offsetX;
+        const cardTop = e.clientY - drag.offsetY;
+        const hit = gridRef.current?.hitTest(
+          cardLeft - DRAG_INDICATOR_OFFSET_X,
+          cardTop - DRAG_INDICATOR_OFFSET_Y,
+          [truck.apptMinutes],
+        );
+        // Arrived trucks stay locked to their actual arrival time. Everything
+        // else follows the cursor so the user can place the card before or
+        // after its appointment.
+        const locked = isTruckInProgress(drag.truckId);
         setHoverSlot(
-          hit ? { dockId: hit.dockId, startMinutes: lockedStartFor(drag.truckId) } : null,
+          hit
+            ? {
+                dockId: hit.dockId,
+                startMinutes: locked ? lockedStartFor(drag.truckId) : hit.startMinutes,
+              }
+            : null,
         );
       }
     };
@@ -544,9 +578,24 @@ export function DockManagementV3({
         window.removeEventListener("click", suppressClick, true),
       );
 
-      const hit = gridRef.current?.hitTest(e.clientX, e.clientY) ?? null;
+      const cardLeft = e.clientX - current.offsetX;
+      const cardTop = e.clientY - current.offsetY;
+      const dragTruckForHit = trucksById[current.truckId];
+      const hit =
+        gridRef.current?.hitTest(
+          cardLeft - DRAG_INDICATOR_OFFSET_X,
+          cardTop - DRAG_INDICATOR_OFFSET_Y,
+          dragTruckForHit ? [dragTruckForHit.apptMinutes] : undefined,
+        ) ?? null;
       const truck = trucksById[current.truckId];
       if (!hit || !truck) return;
+
+      // For in-progress trucks, keep storing the scheduled appt time —
+      // getBarRange shifts the bar to actualArrival, so the card stays put.
+      // For everything else, store the cursor-snapped time so the user can
+      // place the card before or after its appointment.
+      const locked = isTruckInProgress(current.truckId);
+      const resolvedStart = locked ? truck.apptMinutes : hit.startMinutes;
 
       const fromDockId =
         current.kind === "active" || current.kind === "pending"
@@ -577,17 +626,21 @@ export function DockManagementV3({
 
       // If the drop position collides with another scheduled truck, confirm
       // before applying — the other truck will be moved to make room.
-      const colliderId = findCollider(current.truckId, hit.dockId);
+      const colliderId = findCollider(current.truckId, hit.dockId, resolvedStart);
       if (colliderId) {
+        const snapshot = assignments;
         setPendingCollision({
           truckId: current.truckId,
           toDockId: hit.dockId,
           colliderTruckId: colliderId,
+          previousAssignments: snapshot,
         });
+        // Preview the drop so the user sees the overlap behind the modal.
+        applyMove(current.truckId, hit.dockId, resolvedStart);
         return;
       }
 
-      applyMove(current.truckId, hit.dockId);
+      applyMove(current.truckId, hit.dockId, resolvedStart);
     };
 
     window.addEventListener("pointermove", onMove);
@@ -690,7 +743,12 @@ export function DockManagementV3({
             return null;
           })();
           if (colliderId) {
-            setPendingBlock({ draft: d, colliderTruckId: colliderId });
+            const previewBlockId = `blk-preview-${Date.now()}`;
+            setBlocked((prev) => [
+              ...prev,
+              { id: previewBlockId, dateIso, ...d },
+            ]);
+            setPendingBlock({ draft: d, colliderTruckId: colliderId, previewBlockId });
             return;
           }
           setBlocked((prev) => [
@@ -740,11 +798,15 @@ export function DockManagementV3({
         typefix={typefix}
         declutter={declutter}
         redLate={redLate}
+        prismIcon={prismIcon}
         />
 
-        {/* Toast — sits just above the legend pill */}
+        {/* Toast — sits just above the legend pill, aligned with plot center */}
         {toast && (
-          <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+          <div
+            className="fixed bottom-20 z-30 pointer-events-none -translate-x-1/2"
+            style={{ left: plotCenterX != null ? plotCenterX : "50%" }}
+          >
             <div className="bg-ink text-white text-body-md rounded-button shadow-drag px-4 py-2.5">
               {toast}
             </div>
@@ -793,7 +855,7 @@ export function DockManagementV3({
             transform: "rotate(-1deg)",
           }}
         >
-          <TruckCard truck={draggingTruck} variant="scheduled" source={draggingSource} barStatus={draggingBarStatus} treatment={treatment} typefix={typefix} declutter={declutter} redLate={redLate} />
+          <TruckCard truck={draggingTruck} variant="scheduled" source={draggingSource} barStatus={draggingBarStatus} treatment={treatment} typefix={typefix} declutter={declutter} redLate={redLate} prismIcon={prismIcon} />
         </div>
       )}
 
@@ -861,7 +923,14 @@ export function DockManagementV3({
               // another truck — chain into the collision modal if so.
               const colliderId = findCollider(truckId, toDockId);
               if (colliderId) {
-                setPendingCollision({ truckId, toDockId, colliderTruckId: colliderId });
+                const snapshot = assignments;
+                setPendingCollision({
+                  truckId,
+                  toDockId,
+                  colliderTruckId: colliderId,
+                  previousAssignments: snapshot,
+                });
+                applyMove(truckId, toDockId);
                 return;
               }
               applyMove(truckId, toDockId);
@@ -877,11 +946,15 @@ export function DockManagementV3({
         return (
           <ErrorModal
             open
+            dimBackdrop={false}
             title={`${toLabel} already has a truck scheduled at this time`}
-            description="This truck will be automatically reassigned to an empty or available dock."
+            description="This truck will be automatically reassigned to an available dock."
             cancelLabel="Cancel"
             confirmLabel="Confirm"
-            onCancel={() => setPendingCollision(null)}
+            onCancel={() => {
+              setAssignments(pendingCollision.previousAssignments);
+              setPendingCollision(null);
+            }}
             onConfirm={() => {
               applyMoveWithDisplacement(
                 pendingCollision.truckId,
@@ -916,19 +989,25 @@ export function DockManagementV3({
         return (
           <ErrorModal
             open
+            dimBackdrop={false}
             title="Blocked time intersects with a scheduled truck"
             description="This truck will be automatically reassigned to an available dock."
             cancelLabel="Cancel"
             confirmLabel="Confirm"
-            onCancel={() => setPendingBlock(null)}
+            onCancel={() => {
+              setBlocked((prev) => prev.filter((b) => b.id !== pendingBlock.previewBlockId));
+              setPendingBlock(null);
+            }}
             onConfirm={() => {
-              const { draft, colliderTruckId } = pendingBlock;
+              const { draft, colliderTruckId, previewBlockId } = pendingBlock;
               const colliderTruck = trucksById[colliderTruckId];
               const newDockForCollider = findOpenDockForTruck(colliderTruckId, draft.dockId);
-              setBlocked((prev) => [
-                ...prev,
-                { id: `blk-${Date.now()}`, dateIso, ...draft },
-              ]);
+              // Promote the preview block to a permanent id.
+              setBlocked((prev) =>
+                prev.map((b) =>
+                  b.id === previewBlockId ? { ...b, id: `blk-${Date.now()}` } : b,
+                ),
+              );
               if (colliderTruck && newDockForCollider) {
                 setAssignments((prev) => {
                   const without = prev.filter((a) => a.truckId !== colliderTruckId);
