@@ -643,5 +643,5 @@ export const ASSIGNMENTS: Assignment[] = [
 ];
 
 export const BLOCKED_SLOTS: BlockedSlot[] = [
-  { id: "blk-test-1", dockId: "dock-7", startMinutes: t(15, 0), durationMinutes: 60 },
+  { id: "blk-test-1", dockId: "dock-7", startMinutes: t(15, 0), durationMinutes: 60, dateIso: TODAY_ISO },
 ];
