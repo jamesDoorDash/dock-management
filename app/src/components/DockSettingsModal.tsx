@@ -229,7 +229,7 @@ export function DockSettingsModal({
         </div>
 
         {/* Content */}
-        <div className="flex-1 min-h-0 px-8 pb-2 flex flex-col">
+        <div className="flex-1 min-h-0 px-8 flex flex-col">
           {tab === "manage" && (
             <ManageDocksTab
               docks={docks}
@@ -647,11 +647,13 @@ function ManageDocksTab({
             </thead>
           </table>
         </div>
-        {/* Scrolling body + Add dock — scrollbar lives here, outside the table */}
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+        {/* Scrolling body + Add dock — scrollbar hidden, frame above/below stays still */}
+        <div
+          className="flex-1 min-h-0 overflow-y-auto flex flex-col [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        >
           <div
             className={cn(
-              "rounded-b-card border border-t-0 border-line-hovered bg-white overflow-hidden",
+              "shrink-0 rounded-b-card border border-t-0 border-line-hovered bg-white overflow-hidden",
               addingDock && "opacity-40 pointer-events-none",
             )}
           >
