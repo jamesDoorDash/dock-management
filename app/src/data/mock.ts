@@ -642,4 +642,6 @@ export const ASSIGNMENTS: Assignment[] = [
   { truckId: "tr-stord-2f0b", dockId: "dock-5", startMinutes: t(15, 17), source: "manual" },
 ];
 
-export const BLOCKED_SLOTS: BlockedSlot[] = [];
+export const BLOCKED_SLOTS: BlockedSlot[] = [
+  { id: "blk-test-1", dockId: "dock-7", startMinutes: t(15, 0), durationMinutes: 60 },
+];

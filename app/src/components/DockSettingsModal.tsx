@@ -192,7 +192,7 @@ export function DockSettingsModal({
       aria-labelledby="dock-settings-title"
     >
       <div className="absolute inset-0 bg-ink/40" onClick={onClose} />
-      <div className="relative z-10 w-[640px] max-w-[92vw] h-[80vh] min-h-[560px] max-h-[800px] bg-white rounded-card shadow-drag flex flex-col">
+      <div className="relative z-10 w-[832px] max-w-[92vw] h-[80vh] min-h-[560px] max-h-[800px] bg-white rounded-card shadow-drag flex flex-col">
         {/* Close */}
         <button
           type="button"
@@ -620,95 +620,121 @@ function ManageDocksTab({
           </div>
           </div>
         ) : (
+        <>
+        {/* Static header strip — stays put while body scrolls */}
         <div
           className={cn(
-            "mt-2 flex-1 min-h-0 rounded-card border border-line-hovered bg-white overflow-hidden",
+            "mt-2 rounded-t-card border border-b-0 border-line-hovered bg-[#fafafa] overflow-hidden",
             addingDock && "opacity-40 pointer-events-none",
           )}
         >
-        <div className="h-full overflow-y-auto">
-          <table className="w-full border-separate border-spacing-0 [&_th:first-child]:pl-4 [&_td:first-child]:pl-4 [&_th:last-child]:pr-4 [&_td:last-child]:pr-4">
+          <table className="w-full table-fixed border-separate border-spacing-0">
+            <colgroup>
+              <col style={{ width: "80px" }} />
+              <col />
+              <col style={{ width: "110px" }} />
+              <col style={{ width: "210px" }} />
+              <col style={{ width: "80px" }} />
+            </colgroup>
             <thead>
               <tr>
-                <th className="sticky top-0 z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-left text-body-sm-strong text-ink">Active</th>
-                <th className="sticky top-0 z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-left text-body-sm-strong text-ink">Dock name</th>
-                <th className="sticky top-0 z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-left text-body-sm-strong text-ink">Dock ID</th>
-                <th className="sticky top-0 z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-left text-body-sm-strong text-ink whitespace-nowrap">Equipment eligibility</th>
-                <th className="sticky top-0 z-10 border-b border-line bg-[#fafafa] px-3 py-3 text-right text-body-sm-strong text-ink">Actions</th>
+                <th className="border-b border-line px-3 pl-4 py-3 text-left text-body-sm-strong text-ink">Active</th>
+                <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink">Dock name</th>
+                <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink">Dock ID</th>
+                <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink whitespace-nowrap">Equipment eligibility</th>
+                <th className="border-b border-line px-3 pr-4 py-3 text-right text-body-sm-strong text-ink">Actions</th>
               </tr>
             </thead>
-            <tbody>
-              {docks.map((d, idx) => (
-                <ManageDockRow
-                  key={d.id}
-                  dock={d}
-                  isLast={idx === docks.length - 1}
-                  isRenaming={false}
-                  hideExtraColumns={false}
-                  dimmed={false}
-                  renameValue={renameValue}
-                  setRenameValue={setRenameValue}
-                  commitRename={commitRename}
-                  cancelRename={cancelRename}
-                  onToggle={() => onToggle(d.id)}
-                  onMenuOpen={(rect) => onMenuOpen(d.id, rect)}
-                />
-              ))}
-            </tbody>
           </table>
         </div>
-        </div>
-        )}
-        </>
-      )}
-
-      {addingDock ? (
-        <div className="mt-3 flex items-center gap-2">
-          <span className="text-body-md-strong text-ink mr-1">Dock</span>
-          <input
-            autoFocus
-            value={addDockValue}
-            onChange={(e) => setAddDockValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commitAddDock();
-              if (e.key === "Escape") cancelAddDock();
-            }}
-            className="h-10 px-3 rounded-button border border-line-strong bg-white text-body-md-strong text-ink w-40 focus:outline-none focus:border-ink"
-          />
-          <button
-            type="button"
-            onClick={cancelAddDock}
-            className="h-10 px-4 rounded-button border border-line-strong bg-white text-body-md-strong text-ink hover:bg-surface-hovered"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={commitAddDock}
-            disabled={!addDockValue.trim()}
+        {/* Scrolling body + Add dock — scrollbar lives here, outside the table */}
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+          <div
             className={cn(
-              "h-10 px-4 rounded-button text-body-md-strong",
-              addDockValue.trim()
-                ? "bg-ink text-white hover:opacity-90"
-                : "bg-surface-strong text-icon-disabled cursor-not-allowed",
+              "rounded-b-card border border-t-0 border-line-hovered bg-white overflow-hidden",
+              addingDock && "opacity-40 pointer-events-none",
             )}
           >
-            Add
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={startAddDock}
-          disabled={isRenaming}
-          className={cn(
-            "mt-3 inline-flex items-center gap-1.5 text-body-md-strong text-ink hover:text-ink-subdued",
-            isRenaming && "opacity-40 pointer-events-none",
+            <table className="w-full table-fixed border-separate border-spacing-0">
+              <colgroup>
+                <col style={{ width: "80px" }} />
+                <col />
+                <col style={{ width: "110px" }} />
+                <col style={{ width: "210px" }} />
+                <col style={{ width: "80px" }} />
+              </colgroup>
+              <tbody>
+                {docks.map((d, idx) => (
+                  <ManageDockRow
+                    key={d.id}
+                    dock={d}
+                    isLast={idx === docks.length - 1}
+                    isRenaming={false}
+                    hideExtraColumns={false}
+                    dimmed={false}
+                    renameValue={renameValue}
+                    setRenameValue={setRenameValue}
+                    commitRename={commitRename}
+                    cancelRename={cancelRename}
+                    onToggle={() => onToggle(d.id)}
+                    onMenuOpen={(rect) => onMenuOpen(d.id, rect)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {addingDock ? (
+            <div className="mt-3 flex items-center gap-2">
+              <span className="text-body-md-strong text-ink mr-1">Dock</span>
+              <input
+                autoFocus
+                value={addDockValue}
+                onChange={(e) => setAddDockValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitAddDock();
+                  if (e.key === "Escape") cancelAddDock();
+                }}
+                className="h-10 px-3 rounded-button border border-line-strong bg-white text-body-md-strong text-ink w-40 focus:outline-none focus:border-ink"
+              />
+              <button
+                type="button"
+                onClick={cancelAddDock}
+                className="h-10 px-4 rounded-button border border-line-strong bg-white text-body-md-strong text-ink hover:bg-surface-hovered"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={commitAddDock}
+                disabled={!addDockValue.trim()}
+                className={cn(
+                  "h-10 px-4 rounded-button text-body-md-strong",
+                  addDockValue.trim()
+                    ? "bg-ink text-white hover:opacity-90"
+                    : "bg-surface-strong text-icon-disabled cursor-not-allowed",
+                )}
+              >
+                Add
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={startAddDock}
+              disabled={isRenaming}
+              className={cn(
+                "mt-3 self-start inline-flex items-center gap-1.5 text-body-md-strong text-ink hover:text-ink-subdued",
+                isRenaming && "opacity-40 pointer-events-none",
+              )}
+            >
+              <Plus className="size-4" />
+              Add dock
+            </button>
           )}
-        >
-          <Plus className="size-4" />
-          Add dock
-        </button>
+        </div>
+        </>
+        )}
+        </>
       )}
     </div>
   );

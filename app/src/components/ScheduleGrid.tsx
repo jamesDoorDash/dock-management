@@ -1,5 +1,5 @@
 import { useRef, useImperativeHandle, forwardRef, useState, useEffect } from "react";
-import { Trash2 } from "lucide-react";
+import { GripVertical, Trash2 } from "lucide-react";
 import type { Assignment, BlockedSlot, Dock, Truck } from "../data/types";
 import { TruckCard, type Treatment } from "./TruckCard";
 import { CURRENT_TIME_MINUTES, SCHEDULE_START_MINUTES, SCHEDULE_END_MINUTES } from "../data/mock";
@@ -113,6 +113,7 @@ function BlockedCard({
   onResizeStart,
   treatment,
   declutter,
+  prismIcon,
 }: {
   density: "expanded" | "compact";
   rowHeight: number;
@@ -127,11 +128,16 @@ function BlockedCard({
   onResizeStart?: (e: React.PointerEvent) => void;
   treatment?: Treatment;
   declutter?: boolean;
+  prismIcon?: boolean;
 }) {
   const padY = density === "compact" ? 4 : 6;
   const left = ((startMinutes - SCHEDULE_START_MINUTES) / 60) * hourWidth;
   const width = (durationMinutes / 60) * hourWidth;
-  const interactive = blockingMode && !draft;
+  // Blocked slots are always movable/resizable when not a draft. Previously this
+  // was gated on `blockingMode`, but the prototype should let users adjust
+  // existing blocks directly.
+  const interactive = !draft;
+  void blockingMode;
   // V20 (and V34, which inherits V20) — match the inset "little bar"
   // appointment treatment instead of the legacy outlined box.
   const useInsetBar = treatment === "v20";
@@ -140,10 +146,11 @@ function BlockedCard({
       data-block
       onPointerDown={interactive ? onMoveStart : undefined}
       className={cn(
-        "absolute z-10 flex justify-between pr-0.5 text-body-md font-medium overflow-hidden",
+        "absolute z-10 flex justify-between text-body-md font-medium overflow-hidden",
+        durationMinutes <= 15 ? "pr-0.5" : "pr-2",
         density === "expanded" ? "items-start" : "items-center",
         !declutter && "bg-line text-ink",
-        useInsetBar ? "rounded-lg pl-[13px]" : "border-2 rounded pl-2",
+        useInsetBar ? (prismIcon ? "rounded-lg pl-0" : "rounded-lg pl-[13px]") : "border-2 rounded pl-2",
         !declutter && !useInsetBar && "border-[#b2b2b2]",
         draft && "opacity-80 cursor-grabbing",
         interactive && "cursor-grab active:cursor-grabbing touch-none",
@@ -162,7 +169,7 @@ function BlockedCard({
           : {}),
       }}
     >
-      {useInsetBar && (
+      {useInsetBar && !prismIcon && (
         <span
           aria-hidden
           className="absolute"
@@ -176,7 +183,16 @@ function BlockedCard({
           }}
         />
       )}
-      <span className="truncate">Blocked</span>
+      {useInsetBar && prismIcon && (
+        <span
+          aria-hidden
+          className="shrink-0 self-start h-8 flex items-center justify-center"
+          style={{ width: 28, color: declutter ? "#B71000" : "#6c707a" }}
+        >
+          <GripVertical className="size-4" strokeWidth={2.25} />
+        </span>
+      )}
+      <span className="flex-1 min-w-0 truncate text-left">Blocked</span>
       {!draft && (
         <button
           type="button"
@@ -680,6 +696,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                       onResizeStart={(e) => startBlockResize(b.id, e)}
                       treatment={treatment}
                       declutter={declutter}
+                      prismIcon={prismIcon}
                     />
                   );
                 })}
@@ -700,6 +717,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                         draft
                         treatment={treatment}
                         declutter={declutter}
+                        prismIcon={prismIcon}
                       />
                     );
                   })()}
