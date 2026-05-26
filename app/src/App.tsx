@@ -93,7 +93,7 @@ export default function App() {
         ) : version === "v2" ? (
           <DockManagementV2 />
         ) : (
-          <DockManagementV3 treatment={versionToTreatment(version)} typefix={version === "v34" || version === "v35" || version === "v36" || version === "v37" || version === "v38" || version === "v39" || version === "v40"} declutter={version === "v35" || version === "v36" || version === "v37" || version === "v38" || version === "v39" || version === "v40"} legendAttached={version === "v36" || version === "v37" || version === "v38"} redLate={version === "v37"} autoReassignLabel={version === "v36" || version === "v37" || version === "v38" || version === "v39" || version === "v40"} prismIcon={version === "v39" || version === "v40"} />
+          <DockManagementV3 treatment={versionToTreatment(version)} typefix={version === "v34" || version === "v35" || version === "v36" || version === "v37" || version === "v38" || version === "v39" || version === "v40"} declutter={version === "v35" || version === "v36" || version === "v37" || version === "v38" || version === "v39" || version === "v40"} legendAttached={version === "v36" || version === "v37" || version === "v38"} redLate={version === "v37"} autoReassignLabel={version === "v36" || version === "v37" || version === "v38" || version === "v39" || version === "v40"} prismIcon={version === "v39" || version === "v40"} figmaCard={version === "v40"} />
         )}
       </main>
     </div>

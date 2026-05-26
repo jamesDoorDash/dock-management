@@ -109,6 +109,8 @@ interface Props {
   redLate?: boolean;
   /** V39: swap colored left strip for a colored prism (GripVertical) icon. */
   prismIcon?: boolean;
+  /** V40: render TruckCards with the bespoke Figma layout. */
+  figmaCard?: boolean;
   /** Short label for the day after the viewed date (e.g. "May 14"), shown on past-midnight hour headers. */
   nextDayLabel?: string;
   /** Viewed date (ISO). Used as the trigger for auto-scrolling on day change. */
@@ -133,6 +135,7 @@ function BlockedCard({
   treatment,
   declutter,
   prismIcon,
+  figmaCard,
 }: {
   density: "expanded" | "compact";
   rowHeight: number;
@@ -148,6 +151,7 @@ function BlockedCard({
   treatment?: Treatment;
   declutter?: boolean;
   prismIcon?: boolean;
+  figmaCard?: boolean;
 }) {
   const padY = density === "compact" ? 4 : 6;
   const left = ((startMinutes - SCHEDULE_START_MINUTES) / 60) * hourWidth;
@@ -160,6 +164,77 @@ function BlockedCard({
   // V20 (and V34, which inherits V20) — match the inset "little bar"
   // appointment treatment instead of the legacy outlined box.
   const useInsetBar = treatment === "v20";
+
+  // V40 Figma card layout — tight padding, rounded-[8px], red grip, trash + divider.
+  if (figmaCard) {
+    return (
+      <div
+        data-block
+        onPointerDown={interactive ? onMoveStart : undefined}
+        className={cn(
+          "absolute z-10 flex items-center gap-1 rounded-[8px] px-1 py-1.5 overflow-hidden transition-shadow hover:shadow-[0_2px_4px_rgba(25,25,25,0.2)]",
+          draft && "opacity-80 cursor-grabbing",
+          interactive && "cursor-grab active:cursor-grabbing touch-none",
+        )}
+        style={{
+          left,
+          top: dockIdx * rowHeight + padY,
+          width,
+          height: rowHeight - padY * 2,
+          backgroundColor: "#FFF0ED",
+          color: "#191919",
+        }}
+      >
+        <GripVertical
+          aria-hidden
+          className="size-4 shrink-0"
+          style={{ color: "#B71000" }}
+          strokeWidth={2.25}
+        />
+        <span
+          className="flex-1 min-w-0 truncate text-left"
+          style={{
+            color: "#191919",
+            fontFamily: "var(--font-dd-norms, 'DD Norms', system-ui, sans-serif)",
+            fontSize: 14,
+            lineHeight: "20px",
+            fontWeight: 700,
+            letterSpacing: "-0.01px",
+          }}
+        >
+          Blocked
+        </span>
+        {!draft && (
+          <div className="shrink-0 flex items-center gap-1.5">
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete?.();
+              }}
+              className="shrink-0 size-4 grid place-items-center rounded hover:bg-black/5"
+              aria-label="Delete block"
+              style={{ color: "#191919" }}
+            >
+              <PrismTrashIcon className="h-4 w-[14px]" />
+            </button>
+            {interactive && (
+              <div
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  onResizeStart?.(e);
+                }}
+                className="shrink-0 h-4 w-[2px] rounded-full cursor-ew-resize"
+                style={{ backgroundColor: "#191919" }}
+                aria-label="Resize block"
+              />
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
   return (
     <div
       data-block
@@ -276,6 +351,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
     declutter,
     redLate,
     prismIcon,
+    figmaCard,
     nextDayLabel,
     dateIso,
     holdStartIndex,
@@ -716,6 +792,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                       treatment={treatment}
                       declutter={declutter}
                       prismIcon={prismIcon}
+                      figmaCard={figmaCard}
                     />
                   );
                 })}
@@ -737,6 +814,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                         treatment={treatment}
                         declutter={declutter}
                         prismIcon={prismIcon}
+                        figmaCard={figmaCard}
                       />
                     );
                   })()}
@@ -864,6 +942,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                         declutter={declutter}
                         redLate={redLate}
                         prismIcon={prismIcon}
+                        figmaCard={figmaCard}
                         barStatus={barStatus}
                         showMenu={showMenu}
                         menuVariant={menuVariantByTruckId?.(a.truckId) ?? "more"}

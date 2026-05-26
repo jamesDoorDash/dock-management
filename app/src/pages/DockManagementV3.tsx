@@ -53,7 +53,8 @@ export function DockManagementV3({
   redLate = false,
   autoReassignLabel = false,
   prismIcon = false,
-}: { treatment?: Treatment; typefix?: boolean; declutter?: boolean; legendAttached?: boolean; redLate?: boolean; autoReassignLabel?: boolean; prismIcon?: boolean } = {}) {
+  figmaCard = false,
+}: { treatment?: Treatment; typefix?: boolean; declutter?: boolean; legendAttached?: boolean; redLate?: boolean; autoReassignLabel?: boolean; prismIcon?: boolean; figmaCard?: boolean } = {}) {
   const [dateIso, setDateIso] = useState<string>(TODAY_ISO);
   const [zoom, setZoom] = useState<"compact" | "expanded">("compact");
   const [blockingMode, setBlockingMode] = useState(false);
@@ -837,6 +838,7 @@ export function DockManagementV3({
         declutter={declutter}
         redLate={redLate}
         prismIcon={prismIcon}
+        figmaCard={figmaCard}
         />
 
         {/* Toast — sits just above the legend pill, aligned with plot center */}
@@ -893,7 +895,7 @@ export function DockManagementV3({
             transform: "rotate(-1deg)",
           }}
         >
-          <TruckCard truck={draggingTruck} variant="scheduled" source={draggingSource} barStatus={draggingBarStatus} treatment={treatment} typefix={typefix} declutter={declutter} redLate={redLate} prismIcon={prismIcon} />
+          <TruckCard truck={draggingTruck} variant="scheduled" source={draggingSource} barStatus={draggingBarStatus} treatment={treatment} typefix={typefix} declutter={declutter} redLate={redLate} prismIcon={prismIcon} figmaCard={figmaCard} />
         </div>
       )}
 

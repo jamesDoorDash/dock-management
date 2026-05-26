@@ -66,6 +66,10 @@ interface Props {
   redLate?: boolean;
   /** V39: replace the colored left strip with a colored GripVertical (prism) icon. */
   prismIcon?: boolean;
+  /** V40: render the card exactly per the Figma redesign — tight 4px/6px padding,
+   *  2px row gap, 14px/20px DD Norms type, status-colored grip icon, info action,
+   *  and a drop-shadow on hover. */
+  figmaCard?: boolean;
   /** V35: color status derived from the card's bar position vs the current-time line
    *  (departed = entirely past, in_progress = crossing now, scheduled = entirely future). */
   barStatus?: "scheduled" | "in_progress" | "departed";
@@ -414,6 +418,7 @@ export function TruckCard({
   declutter = false,
   redLate = false,
   prismIcon = false,
+  figmaCard = false,
   barStatus,
 }: Props) {
   const lateColor = redLate ? "#B71000" : "#111318";
@@ -434,6 +439,156 @@ export function TruckCard({
             : "scheduled")) as "scheduled" | "in_progress" | "departed"
       ]
     : undefined;
+
+  // === V40 Figma card: bespoke tight layout per the Figma redesign. ===
+  if (figmaCard && (variant === "scheduled" || variant === "compact")) {
+    // Map status → Figma palette. `scheduled` uses the neutral fill from the
+    // Figma file (#F1F1F1), not the legacy STATUS_COLORS grey.
+    const status: "scheduled" | "in_progress" | "departed" =
+      barStatus ??
+      (truck.status === "in_progress" || truck.status === "departed"
+        ? truck.status
+        : "scheduled");
+    const FIGMA_PALETTE = {
+      scheduled: { bg: "#F1F1F1", grip: "#606060" },
+      in_progress: { bg: "#FFF6D4", grip: "#784200" },
+      departed: { bg: "#E7FBEF", grip: "#00832D" },
+    } as const;
+    const palette = FIGMA_PALETTE[status];
+    const TEXT_DEFAULT = "#191919";
+    const TEXT_SUBDUED = "#606060";
+    const statusLine = getStatusLine(truck, CURRENT_TIME_MINUTES, source === "departed");
+
+    if (variant === "compact") {
+      return (
+        <div
+          onPointerDown={onPointerDown}
+          className="group relative h-full w-full flex items-center gap-1 cursor-grab active:cursor-grabbing touch-none overflow-hidden rounded-[8px] px-1 py-1.5 transition-shadow hover:shadow-[0_2px_4px_rgba(25,25,25,0.2)]"
+          style={{ backgroundColor: palette.bg }}
+        >
+          <GripVertical
+            aria-hidden
+            className="size-4 shrink-0"
+            style={{ color: palette.grip }}
+            strokeWidth={2.25}
+          />
+          <button
+            type="button"
+            onClick={onExpand}
+            className="flex-1 min-w-0 text-left truncate"
+            style={{
+              color: TEXT_DEFAULT,
+              fontFamily: "var(--font-dd-norms, 'DD Norms', system-ui, sans-serif)",
+              fontSize: 14,
+              lineHeight: "20px",
+              fontWeight: 700,
+              letterSpacing: "-0.01px",
+            }}
+          >
+            {truck.partner}
+          </button>
+        </div>
+      );
+    }
+
+    // scheduled (expanded) — 74px target height, three rows, 2px gap.
+    return (
+      <div
+        onPointerDown={onPointerDown}
+        className="group relative h-full w-full flex flex-col gap-[2px] cursor-grab active:cursor-grabbing touch-none rounded-[8px] px-1 py-1.5 transition-shadow hover:shadow-[0_2px_4px_rgba(25,25,25,0.2)] overflow-hidden"
+        style={{ backgroundColor: palette.bg }}
+      >
+        {/* Title row */}
+        <div className="flex items-center justify-between gap-1 w-full min-w-0">
+          <div className="flex items-center gap-1 min-w-0 flex-1">
+            <GripVertical
+              aria-hidden
+              className="size-4 shrink-0"
+              style={{ color: palette.grip }}
+              strokeWidth={2.25}
+            />
+            <button
+              type="button"
+              onClick={onCollapse}
+              disabled={!onCollapse}
+              className="min-w-0 flex-1 text-left truncate disabled:cursor-default"
+              style={{
+                color: TEXT_DEFAULT,
+                fontFamily: "var(--font-dd-norms, 'DD Norms', system-ui, sans-serif)",
+                fontSize: 14,
+                lineHeight: "20px",
+                fontWeight: 700,
+                letterSpacing: "-0.01px",
+              }}
+            >
+              {truck.partner}
+            </button>
+          </div>
+          {showMenu && (
+            <button
+              ref={menuBtnRef}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const rect = menuBtnRef.current?.getBoundingClientRect();
+                if (rect) onMenuOpen?.(rect);
+              }}
+              className="shrink-0 size-4 grid place-items-center rounded hover:bg-black/5"
+              style={{ color: TEXT_DEFAULT }}
+              aria-label="Additional info"
+            >
+              <Info className="size-4" strokeWidth={1.75} />
+            </button>
+          )}
+        </div>
+
+        {/* Status / late row — aligned 20px (16px icon + 4px gap) under the title */}
+        <div
+          className="flex items-center pl-5 min-w-0"
+          style={{
+            color: TEXT_SUBDUED,
+            fontFamily: "var(--font-dd-norms, 'DD Norms', system-ui, sans-serif)",
+            fontSize: 14,
+            lineHeight: "20px",
+            fontWeight: 500,
+            letterSpacing: "-0.01px",
+          }}
+        >
+          <span className="truncate">
+            {statusLine.primary}
+            {statusLine.late && "・"}
+          </span>
+          {statusLine.late && (
+            <span className="inline-flex items-center gap-1 shrink-0">
+              <TriangleAlert
+                className="size-4 shrink-0"
+                style={{ color: lateColor }}
+                aria-label="Late"
+              />
+              <span style={{ fontWeight: 700, color: TEXT_DEFAULT }}>{statusLine.late}</span>
+            </span>
+          )}
+        </div>
+
+        {/* Trailer row */}
+        <div
+          className="pl-5 truncate min-w-0"
+          style={{
+            color: TEXT_SUBDUED,
+            fontFamily: "var(--font-dd-norms, 'DD Norms', system-ui, sans-serif)",
+            fontSize: 14,
+            lineHeight: "20px",
+            fontWeight: 500,
+            letterSpacing: "-0.01px",
+          }}
+        >
+          {formatTrailer(truck.trailerSize, truck.parcelCount)}
+          {"・"}
+          {truck.loadType === "floor" ? "Floor loaded" : "Palletized"}
+        </div>
+      </div>
+    );
+  }
 
   // === Compact: short pill, direction arrow + origin underlined ===
   if (variant === "compact") {
