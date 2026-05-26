@@ -951,7 +951,6 @@ export function DockManagementV3({
         return (
           <ErrorModal
             open
-            dimBackdrop={false}
             title={`This truck is already being ${verb}`}
             description="Are you sure you want to move it to a different dock?"
             cancelLabel="Cancel"
@@ -993,7 +992,6 @@ export function DockManagementV3({
         return (
           <ErrorModal
             open
-            dimBackdrop={false}
             title={`${toLabel} already has a truck scheduled at this time`}
             description="This truck will be automatically reassigned to an available dock."
             cancelLabel="Cancel"
@@ -1036,7 +1034,6 @@ export function DockManagementV3({
         return (
           <ErrorModal
             open
-            dimBackdrop={false}
             title="Blocked time intersects with a scheduled truck"
             description="This truck will be automatically reassigned to an available dock."
             cancelLabel="Cancel"

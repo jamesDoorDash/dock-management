@@ -166,9 +166,8 @@ function BlockedCard({
   const useInsetBar = treatment === "v20";
 
   // V40 Figma card layout — tight padding, rounded-[8px], red grip, trash + divider.
-  // Per Figma node 119:9008 the Blocked card is a single 32px-tall row regardless
-  // of zoom: in expanded mode it pins to the top of the dock row instead of
-  // stretching to fill it. No hover shadow.
+  // Per Figma node 119:9008 the Blocked card fills the dock row height (fat bar
+  // in expanded mode, thin bar in compact mode). No hover elevation shadow.
   if (figmaCard) {
     return (
       <div
@@ -183,8 +182,7 @@ function BlockedCard({
           left,
           top: dockIdx * rowHeight + padY,
           width,
-          // 32px Figma height, capped by the available row room.
-          height: Math.min(32, rowHeight - padY * 2),
+          height: rowHeight - padY * 2,
           backgroundColor: "#FFF0ED",
           color: "#191919",
         }}
