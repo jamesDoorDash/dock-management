@@ -1,10 +1,29 @@
 import { useRef, useImperativeHandle, forwardRef, useState, useEffect } from "react";
-import { GripVertical, Trash2 } from "lucide-react";
+import { GripVertical } from "lucide-react";
 import type { Assignment, BlockedSlot, Dock, Truck } from "../data/types";
 import { TruckCard, type Treatment } from "./TruckCard";
 import { CURRENT_TIME_MINUTES, SCHEDULE_START_MINUTES, SCHEDULE_END_MINUTES } from "../data/mock";
 import { formatTime, formatTimeShort, getBarRange } from "../lib/time";
 import { cn } from "../lib/cn";
+
+function PrismTrashIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 14 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M8.33301 0C9.25348 0 10 0.746517 10 1.66699V3H13C13.5523 3 14 3.44772 14 4C14 4.55228 13.5523 5 13 5V13C13 14.6569 11.6569 16 10 16H4C2.34315 16 1 14.6569 1 13V5C0.447715 5 0 4.55228 0 4C0 3.44772 0.447715 3 1 3H4V1.66699C4 0.746518 4.74652 0 5.66699 0H8.33301ZM3 13C3 13.5523 3.44772 14 4 14H10C10.5523 14 11 13.5523 11 13V5H3V13ZM6 3H8V2H6V3Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
 
 const DOCK_COL_WIDTH = 92;
 const HEADER_HEIGHT = 44;
@@ -192,7 +211,7 @@ function BlockedCard({
           <GripVertical className="size-4" strokeWidth={2.25} />
         </span>
       )}
-      <span className="flex-1 min-w-0 truncate text-left">Blocked</span>
+      <span className="flex-1 min-w-0 truncate text-left self-start h-8 flex items-center">Blocked</span>
       {!draft && (
         <button
           type="button"
@@ -201,10 +220,10 @@ function BlockedCard({
             e.stopPropagation();
             onDelete?.();
           }}
-          className="shrink-0 size-6 grid place-items-center rounded hover:bg-black/5"
+          className="shrink-0 self-start h-8 w-6 grid place-items-center rounded hover:bg-black/5"
           aria-label="Delete block"
         >
-          <Trash2 className="size-4 text-icon" />
+          <PrismTrashIcon className="h-4 w-[14px] text-icon" />
         </button>
       )}
       {/* Right-edge resize handle (only in blocking mode) */}
@@ -217,7 +236,7 @@ function BlockedCard({
           className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize flex items-center justify-center group"
           aria-label="Resize block"
         >
-          <div className="h-3 w-0.5 bg-[#b2b2b2] group-hover:bg-ink rounded-full" />
+          <div className="h-3 w-0.5 bg-ink group-hover:bg-ink rounded-full" />
         </div>
       )}
     </div>

@@ -78,7 +78,6 @@ export function DockManagementV3({
   const plotAreaRef = useRef<HTMLDivElement>(null);
   const [plotCenterX, setPlotCenterX] = useState<number | null>(null);
   useEffect(() => {
-    if (!legendAttached) return;
     const measure = () => {
       const el = plotAreaRef.current;
       if (!el) return;
@@ -88,7 +87,7 @@ export function DockManagementV3({
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [legendAttached]);
+  }, []);
   const [hoverSlot, setHoverSlot] = useState<{ dockId: string; startMinutes: number } | null>(null);
   const [menu, setMenu] = useState<{ truckId: string; anchor: DOMRect } | null>(null);
   const [detailTruckId, setDetailTruckId] = useState<string | null>(null);
@@ -855,7 +854,7 @@ export function DockManagementV3({
         {/* Centered floating legend pill */}
         <div
           className={"fixed z-20 pointer-events-none -translate-x-1/2 " + (legendAttached ? "bottom-0" : "bottom-6")}
-          style={{ left: legendAttached && plotCenterX != null ? plotCenterX : "50%" }}
+          style={{ left: plotCenterX != null ? plotCenterX : "50%" }}
         >
           <div className={"pointer-events-auto bg-white border border-line shadow-drag flex items-center " + (legendAttached ? "rounded-t-button border-b-0 px-7 py-4 gap-8" : "rounded-button px-4 py-2.5 gap-6")}>
             {blockingMode ? (
@@ -950,6 +949,7 @@ export function DockManagementV3({
         return (
           <ErrorModal
             open
+            dimBackdrop={false}
             title={`This truck is already being ${verb}`}
             description="Are you sure you want to move it to a different dock?"
             cancelLabel="Cancel"
