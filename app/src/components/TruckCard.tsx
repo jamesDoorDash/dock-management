@@ -8,6 +8,26 @@ import { cn } from "../lib/cn";
 type Variant = "rail" | "scheduled" | "compact";
 type Source = "auto" | "manual" | "departed";
 
+/** Prism 16/warning-line icon, traced from Figma node 119:8972 (V40 design).
+ *  Uses `currentColor` so callers can tint it. */
+function PrismWarningIcon({ className, color }: { className?: string; color?: string }) {
+  return (
+    <svg
+      className={className}
+      width="16"
+      height="15"
+      viewBox="0 0 16.0004 15"
+      fill={color ?? "currentColor"}
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <path d="M8.00022 9.99998C8.69058 9.99998 9.25022 10.5596 9.25022 11.25C9.25022 11.9403 8.69058 12.5 8.00022 12.5C7.30987 12.5 6.75022 11.9403 6.75022 11.25C6.75022 10.5596 7.30987 9.99998 8.00022 9.99998Z" />
+      <path d="M8.00022 4.99998C8.55251 4.99998 9.00022 5.4477 9.00022 5.99998V8.49998C9.00022 9.05227 8.55251 9.49998 8.00022 9.49998C7.44794 9.49998 7.00022 9.05227 7.00022 8.49998V5.99998C7.00022 5.4477 7.44794 4.99998 8.00022 4.99998Z" />
+      <path fillRule="evenodd" clipRule="evenodd" d="M6.58616 0.775371C7.26731 -0.292744 8.85604 -0.257374 9.47678 0.881816L15.7893 12.4746C16.4073 13.61 15.5941 14.9998 14.3117 15H1.68772C0.405595 14.9996 -0.406811 13.6099 0.21116 12.4746L6.52268 0.881816L6.58616 0.775371ZM2.24632 12.9629H13.7532L7.99925 2.39451L2.24632 12.9629Z" />
+    </svg>
+  );
+}
+
 export type Treatment =
   | "default"
   | "v4"
@@ -475,7 +495,7 @@ export function TruckCard({
           <button
             type="button"
             onClick={onExpand}
-            className="flex-1 min-w-0 text-left truncate"
+            className="flex-1 min-w-0 flex items-center gap-1 text-left"
             style={{
               color: TEXT_DEFAULT,
               fontFamily: "var(--font-dd-norms, 'DD Norms', system-ui, sans-serif)",
@@ -485,7 +505,13 @@ export function TruckCard({
               letterSpacing: "-0.01px",
             }}
           >
-            {truck.partner}
+            {isLate && (
+              <PrismWarningIcon
+                className="size-4 shrink-0"
+                color={lateColor}
+              />
+            )}
+            <span className="truncate min-w-0">{truck.partner}</span>
           </button>
         </div>
       );
@@ -560,10 +586,9 @@ export function TruckCard({
           </span>
           {statusLine.late && (
             <span className="inline-flex items-center gap-1 shrink-0">
-              <TriangleAlert
+              <PrismWarningIcon
                 className="size-4 shrink-0"
-                style={{ color: lateColor }}
-                aria-label="Late"
+                color={lateColor}
               />
               <span style={{ fontWeight: 700, color: TEXT_DEFAULT }}>{statusLine.late}</span>
             </span>
