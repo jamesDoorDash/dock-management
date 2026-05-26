@@ -174,7 +174,7 @@ function BlockedCard({
         data-block
         onPointerDown={interactive ? onMoveStart : undefined}
         className={cn(
-          "absolute z-10 flex items-center gap-1 rounded-[8px] px-1 py-1.5 overflow-hidden",
+          "absolute z-10 flex items-start gap-1 rounded-[8px] px-1 py-1.5 overflow-hidden",
           draft && "opacity-80 cursor-grabbing",
           interactive && "cursor-grab active:cursor-grabbing touch-none",
         )}
