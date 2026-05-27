@@ -7,7 +7,6 @@ import {
   Printer,
   Pencil,
   Trash2,
-  Plus,
   ArrowRight,
   ChevronDown,
   Truck,
@@ -26,7 +25,7 @@ function equipmentEnabledCount(eq: DockEquipment): number {
   return EQUIPMENT_TYPES.reduce((n, t) => n + (eq[t.id] ? 1 : 0), 0);
 }
 
-type Tab = "manage" | "schedule";
+type Tab = "manage" | "schedule" | "priority";
 
 interface Hours {
   startMinutes: number;
@@ -1065,6 +1064,7 @@ function Switch({
 // ============================================================
 // Dock priority tab
 // ============================================================
+// @ts-expect-error unused legacy component, kept for reference
 function DockPriorityTab({
   docks,
   priorityOrder,
