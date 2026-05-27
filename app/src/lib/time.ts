@@ -19,7 +19,7 @@ export function formatTrailer(size?: string, parcels?: number): string {
   const parts: string[] = [];
   if (size) parts.push(size.replace(" ft", "'"));
   if (parcels !== undefined) parts.push(`${parcels.toLocaleString()} parcels`);
-  return parts.join(" · ");
+  return parts.join(" ・ ");
 }
 
 export function formatDateLabel(iso: string): string {
@@ -45,6 +45,10 @@ export function formatLateness(min: number): string {
 const LATE_TRUCK_IDS = new Set(["tr-gco-1", "tr-hm-ret", "tr-allpack"]);
 export function synthLateMinutes(truckId: string): number {
   if (!LATE_TRUCK_IDS.has(truckId)) return 0;
+  // tr-allpack is the "checked in at the time line" demo truck — pin its
+  // actualArrival to 14:15 (40 min after its 13:35 appt) so its bar stays
+  // put when the demo advances the current-time line.
+  if (truckId === "tr-allpack") return 40;
   let h = 0;
   for (let i = 0; i < truckId.length; i++) h = (h * 31 + truckId.charCodeAt(i)) >>> 0;
   return 5 + (h % 106);
@@ -58,7 +62,21 @@ export function synthLateMinutes(truckId: string): number {
  * stay 10–50 minutes longer. Separate hash from `synthLateMinutes` so the two
  * signals don't correlate.
  */
+// Demo-only display override for HM-IN's overtime. Affects the visible bar
+// width via getBarRange only — synthStayOvertimeMinutes stays untouched so the
+// auto-assign layout doesn't shift between demo frames.
+let HM_DISPLAY_OVERTIME: number | null = null;
+export function setHmOvertimeOverride(m: number | null) {
+  HM_DISPLAY_OVERTIME = m;
+}
+// Allpack stays overtime as the demo advances — bar's right edge tracks the
+// current-time line so it visibly grows without finishing.
+let ALLPACK_OVERTIME = 0;
+export function setAllpackOvertimeOverride(m: number) {
+  ALLPACK_OVERTIME = m;
+}
 export function synthStayOvertimeMinutes(truckId: string): number {
+  if (truckId === "tr-allpack") return ALLPACK_OVERTIME;
   let h = 0;
   for (let i = 0; i < truckId.length; i++) h = (h * 37 + truckId.charCodeAt(i) + 13) >>> 0;
   const bucket = h % 100;
@@ -129,7 +147,10 @@ export function getBarRange(
   isDeparted = false,
 ): { startMin: number; widthMin: number } {
   const arrivalDelay = synthLateMinutes(truck.id);
-  const stayOvertime = synthStayOvertimeMinutes(truck.id);
+  const stayOvertime =
+    truck.id === "tr-hm-ret" && HM_DISPLAY_OVERTIME !== null
+      ? HM_DISPLAY_OVERTIME
+      : synthStayOvertimeMinutes(truck.id);
   const actualArrival = scheduledStartMinutes + arrivalDelay;
   const actualDepart = actualArrival + truck.durationMinutes + stayOvertime;
 

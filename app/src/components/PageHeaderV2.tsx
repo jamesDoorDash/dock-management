@@ -34,6 +34,8 @@ interface Props {
   zoom: "compact" | "expanded";
   onZoomIn: () => void;
   onZoomOut: () => void;
+  /** V40: render zoom controls as a Prism Button Toggle Group instead of two separate buttons. */
+  toggleZoom?: boolean;
   blockingMode: boolean;
   onEnterBlockingMode: () => void;
   onExitBlockingMode: () => void;
@@ -77,6 +79,7 @@ export function PageHeaderV2({
   zoom,
   onZoomIn,
   onZoomOut,
+  toggleZoom,
   blockingMode,
   onEnterBlockingMode,
   onExitBlockingMode,
@@ -157,30 +160,63 @@ export function PageHeaderV2({
 
           <div className="w-4" />
 
-          <button
-            type="button"
-            onClick={onZoomOut}
-            disabled={zoomOutDisabled}
-            className={cn(
-              "h-10 px-3 inline-flex items-center gap-1 rounded-button border border-line-strong bg-white text-body-md-strong",
-              zoomOutDisabled ? "text-icon-disabled cursor-not-allowed" : "text-ink hover:bg-surface-hovered",
-            )}
-          >
-            <Minus className="size-5" />
-            Zoom out
-          </button>
-          <button
-            type="button"
-            onClick={onZoomIn}
-            disabled={zoomInDisabled}
-            className={cn(
-              "h-10 px-3 inline-flex items-center gap-1 rounded-button border border-line-strong bg-white text-body-md-strong",
-              zoomInDisabled ? "text-icon-disabled cursor-not-allowed" : "text-ink hover:bg-surface-hovered",
-            )}
-          >
-            Zoom in
-            <Plus className="size-5" />
-          </button>
+          {toggleZoom ? (
+            <div className="inline-flex items-center justify-center bg-white border border-line-strong rounded-button shrink-0">
+              <button
+                type="button"
+                onClick={onZoomOut}
+                aria-pressed={zoom === "compact"}
+                style={zoom === "compact" ? { outline: "2px solid #111318", outlineOffset: "-1px" } : undefined}
+                className={cn(
+                  "h-10 px-3 py-1 inline-flex items-center justify-center gap-1 rounded-button text-body-md-strong whitespace-nowrap shrink-0 relative",
+                  zoom === "compact" ? "text-ink z-10" : "text-ink-subdued",
+                )}
+              >
+                <Minus className="size-5" />
+                Zoom out
+              </button>
+              <button
+                type="button"
+                onClick={onZoomIn}
+                aria-pressed={zoom === "expanded"}
+                style={zoom === "expanded" ? { outline: "2px solid #111318", outlineOffset: "-1px" } : undefined}
+                className={cn(
+                  "h-10 px-3 py-1 inline-flex items-center justify-center gap-1 rounded-button text-body-md-strong whitespace-nowrap shrink-0 relative",
+                  zoom === "expanded" ? "text-ink z-10" : "text-ink-subdued",
+                )}
+              >
+                Zoom in
+                <Plus className="size-5" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={onZoomOut}
+                disabled={zoomOutDisabled}
+                className={cn(
+                  "h-10 px-3 inline-flex items-center gap-1 rounded-button border border-line-strong bg-white text-body-md-strong",
+                  zoomOutDisabled ? "text-icon-disabled cursor-not-allowed" : "text-ink hover:bg-surface-hovered",
+                )}
+              >
+                <Minus className="size-5" />
+                Zoom out
+              </button>
+              <button
+                type="button"
+                onClick={onZoomIn}
+                disabled={zoomInDisabled}
+                className={cn(
+                  "h-10 px-3 inline-flex items-center gap-1 rounded-button border border-line-strong bg-white text-body-md-strong",
+                  zoomInDisabled ? "text-icon-disabled cursor-not-allowed" : "text-ink hover:bg-surface-hovered",
+                )}
+              >
+                Zoom in
+                <Plus className="size-5" />
+              </button>
+            </>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

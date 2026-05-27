@@ -1,16 +1,53 @@
 import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import { RotateCw, Info } from "lucide-react";
+
+function PrismPauseIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <path d="M4 4V20H8V4H4ZM16 4V20H20V4H16ZM10 20C10 21.1046 9.10457 22 8 22H4C2.89543 22 2 21.1046 2 20V4C2 2.89543 2.89543 2 4 2H8C9.10457 2 10 2.89543 10 4V20ZM22 20C22 21.1046 21.1046 22 20 22H16C14.8954 22 14 21.1046 14 20V4C14 2.89543 14.8954 2 16 2H20C21.1046 2 22 2.89543 22 4V20Z" />
+    </svg>
+  );
+}
+
+function PrismCloseIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <path d="M18.7929 3.79289C19.1834 3.40237 19.8164 3.40237 20.207 3.79289C20.5974 4.18342 20.5975 4.81646 20.207 5.20696L13.414 12L20.207 18.7929C20.5974 19.1834 20.5975 19.8165 20.207 20.207C19.8165 20.5975 19.1834 20.5974 18.7929 20.207L12 13.414L5.20696 20.207C4.81646 20.5975 4.18342 20.5974 3.79289 20.207C3.40237 19.8164 3.40237 19.1834 3.79289 18.7929L10.5859 12L3.79289 5.20696C3.40237 4.81643 3.40237 4.18342 3.79289 3.79289C4.18342 3.40237 4.81643 3.40237 5.20696 3.79289L12 10.5859L18.7929 3.79289Z" />
+    </svg>
+  );
+}
 import { PageHeaderV2 } from "../components/PageHeaderV2";
 import { ScheduleGrid, type ScheduleGridHandle } from "../components/ScheduleGrid";
 import { TruckCard, STATUS_COLORS, type Treatment } from "../components/TruckCard";
+import {
+  AssignmentPanel,
+  HOLD_DOCK_ID,
+  UNASSIGNED_DOCK_ID,
+} from "../components/AssignmentPanel";
 import { PopoverMenu } from "../components/PopoverMenu";
 import { DockSettingsModal } from "../components/DockSettingsModal";
 import { TruckDetailSheet } from "../components/TruckDetailSheet";
 import { ErrorModal } from "../components/ErrorModal";
-import { BLOCKED_SLOTS, CURRENT_TIME_MINUTES, DOCKS, FACILITY, TODAY_ISO, TRUCKS } from "../data/mock";
+import { BLOCKED_SLOTS, CURRENT_TIME_MINUTES, DOCKS, FACILITY, TODAY_ISO, TRUCKS, setCurrentTimeMinutes } from "../data/mock";
 import type { Assignment, BlockedSlot, Dock, Truck } from "../data/types";
 import { autoAssignAll } from "../lib/autoAssign";
-import { getBarRange, synthLateMinutes, synthStayOvertimeMinutes } from "../lib/time";
+import { getBarRange, synthLateMinutes, synthStayOvertimeMinutes, setHmOvertimeOverride, setAllpackOvertimeOverride } from "../lib/time";
 import { cn } from "../lib/cn";
 
 type DragState =
@@ -62,11 +99,20 @@ export function DockManagementV3({
   const [dockSettingsInitialTab, setDockSettingsInitialTab] = useState<"manage" | "priority" | "schedule">("manage");
   const [docks, setDocks] = useState<Dock[]>(DOCKS);
   const [priorityOrder, setPriorityOrder] = useState<string[]>(() => DOCKS.map((d) => d.id));
-  /** Ordered list of on-hold row IDs. The last entry is always the empty "On hold" drop target. */
+  /** Ordered list of on-hold row IDs. The last entry is always the empty "On hold" drop target.
+   *  Pre-V40 only — V40 replaces this with the side-panel `panelHold` list. */
   const [holdSlotIds, setHoldSlotIds] = useState<string[]>(["hold-1"]);
+  /** V40: ordered list of truck IDs in the right-side On hold panel. */
+  const [panelHold, setPanelHold] = useState<string[]>([]);
+  /** V40: ordered list of truck IDs in the right-side Unassigned panel. */
+  const [panelUnassigned, setPanelUnassigned] = useState<string[]>([]);
+  /** V40: drop zone the pointer is currently over while dragging — drives the highlight. */
+  const [panelHoverZone, setPanelHoverZone] = useState<"hold" | "unassigned" | null>(null);
+  /** V40: zone the current drag originated from, if it started in the panel. */
+  const [panelDragOrigin, setPanelDragOrigin] = useState<"hold" | "unassigned" | null>(null);
   const [receivingHours, setReceivingHours] = useState(FACILITY.receivingHours);
   const [shippingHours, setShippingHours] = useState(FACILITY.shippingHours);
-  const [blocked, setBlocked] = useState<BlockedSlot[]>(BLOCKED_SLOTS);
+  const [blocked, setBlocked] = useState<BlockedSlot[]>(figmaCard ? [] : BLOCKED_SLOTS);
   /** Manual overrides keyed by truckId. These override the auto-assigned slot for that truck. */
   const [manualOverrides, setManualOverrides] = useState<Record<string, Assignment>>({});
   /** Cards the user clicked to inline-expand from compact mode (sticky until outside click). */
@@ -90,6 +136,69 @@ export function DockManagementV3({
     return () => window.removeEventListener("resize", measure);
   }, []);
   const [hoverSlot, setHoverSlot] = useState<{ dockId: string; startMinutes: number } | null>(null);
+  // Demo flow advanced by pressing "W". Resets to 0 on hard refresh.
+  const [demoStep, setDemoStep] = useState(0);
+  // Alternate flow advanced by pressing "E". Same story but auto-pushes the
+  // scheduled truck before any collision can happen — no modal, no user input.
+  const [demoStepE, setDemoStepE] = useState(0);
+  const [demoCollisionModalOpen, setDemoCollisionModalOpen] = useState(false);
+  // null = no choice yet, "confirm" = displaced, "cancel" = left overlapping.
+  const [demoCollisionChoice, setDemoCollisionChoice] = useState<null | "confirm" | "cancel">(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      if (e.key === "w" || e.key === "W") setDemoStep((s) => s + 1);
+      else if (e.key === "e" || e.key === "E") setDemoStepE((s) => s + 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  // Effective step = whichever demo flow has progressed further. W and E share
+  // most frames; E diverges at step 4 by auto-displacing ORD-7 instead of
+  // letting the W flow reach a step-5 collision modal.
+  const effectiveStep = Math.max(demoStep, demoStepE);
+  // Apply during render so dependent reads of CURRENT_TIME_MINUTES see the new value this pass.
+  setCurrentTimeMinutes(
+    effectiveStep >= 6
+      ? 15 * 60 + 30
+      : effectiveStep >= 5
+        ? 15 * 60 + 25
+        : effectiveStep >= 4
+          ? 15 * 60 + 20
+          : effectiveStep >= 3
+            ? 15 * 60 + 15
+            : effectiveStep >= 2
+              ? 14 * 60 + 50
+              : 14 * 60 + 15,
+  );
+  // HM grows ~10% past its appointment starting at frame 2 (overtime while
+  // it's still checked in), and stays that wider size through frame 3.
+  setHmOvertimeOverride(effectiveStep >= 2 ? 3 : 0);
+  // Allpack stays overtime past frame 3 — bar's right edge follows the time line.
+  setAllpackOvertimeOverride(
+    effectiveStep >= 6 ? 15 : effectiveStep >= 5 ? 10 : effectiveStep >= 4 ? 5 : 0,
+  );
+  useEffect(() => {
+    const anyStarted = demoStep >= 1 || demoStepE >= 1;
+    if (anyStarted) {
+      setManualOverrides((prev) => {
+        // E auto-displaces ORD-7 at step 4 (silent, no modal). W requires the
+        // user to acknowledge the step-5 collision modal first.
+        const wDisplaces = demoStep >= 5 && demoCollisionChoice === "confirm";
+        const eDisplaces = demoStepE >= 4;
+        const desiredOrdDock = wDisplaces || eDisplaces ? "dock-6" : "dock-5";
+        if (prev["tr-ord7-in"]?.dockId === desiredOrdDock) return prev;
+        return {
+          ...prev,
+          "tr-ord7-in": { truckId: "tr-ord7-in", dockId: desiredOrdDock, startMinutes: 15 * 60 + 25, source: "manual" },
+        };
+      });
+    }
+    if (demoStep === 5 && demoCollisionChoice === null) {
+      setDemoCollisionModalOpen(true);
+    }
+  }, [demoStep, demoStepE, demoCollisionChoice]);
   const [menu, setMenu] = useState<{ truckId: string; anchor: DOMRect } | null>(null);
   const [detailTruckId, setDetailTruckId] = useState<string | null>(null);
   /** Set when a drop on an in-progress truck needs user confirmation before applying.
@@ -120,9 +229,9 @@ export function DockManagementV3({
       }
     | null
   >(null);
-  /** Shown when the user drops an in-progress truck onto an on-hold slot — acknowledgement only. */
+  /** Shown when the user drops an in-progress truck somewhere it can't go (panel hold/unassigned, or an on-hold dock slot) — acknowledgement only. */
   const [inProgressHoldError, setInProgressHoldError] = useState<
-    | { truckId: string }
+    | { truckId: string; zone: "hold" | "unassigned" }
     | null
   >(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -141,19 +250,32 @@ export function DockManagementV3({
 
   // Trucks visible on the schedule for the current viewing date
   const trucksForDate = useMemo(() => TRUCKS.filter((t) => t.dateIso === dateIso), [dateIso]);
+  // V40: trucks in the side panel (on hold or unassigned) are excluded from auto-assign;
+  // they only live in the panel until dragged onto the grid.
+  const panelTruckIds = useMemo(
+    () => new Set<string>(figmaCard ? [...panelHold, ...panelUnassigned] : []),
+    [figmaCard, panelHold, panelUnassigned],
+  );
+  const trucksForAutoAssign = useMemo(
+    () => trucksForDate.filter((t) => !panelTruckIds.has(t.id)),
+    [trucksForDate, panelTruckIds],
+  );
   // Display order — schedule left column matches the canonical dock order from Manage docks
   const activeDocks = useMemo(() => docks.filter((d) => d.active), [docks]);
   // Virtual "On hold" rows rendered below the real docks. The last slot is the
   // always-empty drop target labeled "On hold"; the rest are numbered "On hold N".
+  // V40 replaces this with the side panel — no bottom hold rows.
   const holdDocks = useMemo<Dock[]>(
     () =>
-      holdSlotIds.map((id, i) => ({
-        id,
-        label: holdSlotIds.length === 1 ? "On hold" : `On hold ${i + 1}`,
-        uuid: id,
-        active: true,
-      })),
-    [holdSlotIds],
+      figmaCard
+        ? []
+        : holdSlotIds.map((id, i) => ({
+            id,
+            label: holdSlotIds.length === 1 ? "On hold" : `On hold ${i + 1}`,
+            uuid: id,
+            active: true,
+          })),
+    [figmaCard, holdSlotIds],
   );
   // Docks + hold rows together — what the schedule grid actually renders.
   const displayDocks = useMemo(() => [...activeDocks, ...holdDocks], [activeDocks, holdDocks]);
@@ -175,8 +297,8 @@ export function DockManagementV3({
     [blocked],
   );
   const autoForDate = useMemo(
-    () => autoAssignAll(trucksForDate, priorityActiveDocks, committedBlocked),
-    [trucksForDate, priorityActiveDocks, committedBlocked],
+    () => autoAssignAll(trucksForAutoAssign, priorityActiveDocks, committedBlocked),
+    [trucksForAutoAssign, priorityActiveDocks, committedBlocked],
   );
   const autoById = useMemo(
     () => Object.fromEntries(autoForDate.map((a) => [a.truckId, a])) as Record<string, Assignment>,
@@ -208,7 +330,10 @@ export function DockManagementV3({
       const stayOvertime = synthStayOvertimeMinutes(truckId);
       const actualArrival = start + arrivalDelay;
       const actualDepart = actualArrival + t.durationMinutes + stayOvertime;
-      return actualArrival <= CURRENT_TIME_MINUTES && CURRENT_TIME_MINUTES < actualDepart;
+      // Strict less-than on arrival: a truck whose actualArrival is exactly the
+      // current time line (e.g. allpack at frame 0) hasn't *actually* arrived
+      // yet — it's still scheduled/overdue and remains movable.
+      return actualArrival < CURRENT_TIME_MINUTES && CURRENT_TIME_MINUTES < actualDepart;
     },
     [trucksById, assignments],
   );
@@ -291,6 +416,24 @@ export function DockManagementV3({
   // Reset inline-expanded set when global zoom changes
   useEffect(() => setExpandedIds(new Set()), [zoom]);
 
+  // V40 easter egg: clicking "Returns" in the sidebar bulk-moves every truck on
+  // the current schedule into the Unassigned panel so the panel can be exercised.
+  useEffect(() => {
+    if (!figmaCard) return;
+    const onUnassignAll = () => {
+      // Skip departed (they can't be moved) and in-progress (panel can't hold a
+      // truck that's currently being loaded/unloaded).
+      const ids = trucksForDate
+        .filter((t) => !isTruckDeparted(t.id) && !isTruckInProgress(t.id))
+        .map((t) => t.id);
+      setPanelHold([]);
+      setPanelUnassigned(ids);
+      setManualOverrides({});
+    };
+    window.addEventListener("v40:unassign-all", onUnassignAll);
+    return () => window.removeEventListener("v40:unassign-all", onUnassignAll);
+  }, [figmaCard, trucksForDate, isTruckDeparted, isTruckInProgress]);
+
   // Compact on-hold rows: drop any empty hold slot that isn't the trailing
   // drop target so numbering stays contiguous.
   useEffect(() => {
@@ -356,6 +499,23 @@ export function DockManagementV3({
     [zoom, expandedIds, hoverExpandedId],
   );
 
+  // V40: lookup ordered Truck[] for each panel section.
+  const holdTrucks = useMemo<Truck[]>(
+    () => panelHold.map((id) => trucksById[id]).filter((t): t is Truck => !!t),
+    [panelHold, trucksById],
+  );
+  const unassignedTrucks = useMemo<Truck[]>(
+    () =>
+      panelUnassigned
+        .map((id) => trucksById[id])
+        .filter((t): t is Truck => !!t)
+        // Unassigned is always ordered by appointment time — there's no notion
+        // of priority within it (unlike on hold), so dispatchers see the next
+        // truck to deal with at the top.
+        .sort((a, b) => a.apptMinutes - b.apptMinutes),
+    [panelUnassigned, trucksById],
+  );
+
   const startDrag = useCallback(
     (truckId: string, e: React.PointerEvent) => {
       // Don't initiate drag from the ... menu button — that's a click-only target.
@@ -370,6 +530,8 @@ export function DockManagementV3({
         showToast("This truck has already departed and can't be rearranged");
         return;
       }
+      // Clear any panel-origin marker; this drag came from the grid.
+      setPanelDragOrigin(null);
       // Start in 'pending' — we don't commit to a drag until pointer moves past threshold.
       // This lets simple clicks (e.g. on the underline to expand) still work.
       setDrag({
@@ -385,6 +547,38 @@ export function DockManagementV3({
       });
     },
     [assignments, isTruckDeparted, showToast],
+  );
+
+  /** V40: start a drag for a truck originating in the right-side AssignmentPanel.
+   *  Panel trucks don't have a real Assignment, so we synthesize one with a sentinel
+   *  dockId so the drop-handler can recognize the origin and clean up the list. */
+  const startPanelDrag = useCallback(
+    (truckId: string, zone: "hold" | "unassigned", e: React.PointerEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('button[aria-label="More options"], button[aria-label="Additional info"]')) return;
+      const cardEl = (e.currentTarget as HTMLElement).closest("[data-panel-truck-id]") as HTMLElement | null;
+      const rect = (cardEl ?? (e.currentTarget as HTMLElement)).getBoundingClientRect();
+      const truck = trucksById[truckId];
+      if (!truck) return;
+      setPanelDragOrigin(zone);
+      setDrag({
+        kind: "pending",
+        truckId,
+        startX: e.clientX,
+        startY: e.clientY,
+        offsetX: e.clientX - rect.left,
+        offsetY: e.clientY - rect.top,
+        width: rect.width,
+        height: rect.height,
+        fromAssignment: {
+          truckId,
+          dockId: zone === "hold" ? HOLD_DOCK_ID : UNASSIGNED_DOCK_ID,
+          startMinutes: truck.apptMinutes,
+          source: "manual",
+        },
+      });
+    },
+    [trucksById],
   );
 
   const applyMove = useCallback(
@@ -506,6 +700,17 @@ export function DockManagementV3({
     [trucksById, setAssignments, findOpenDockForTruck],
   );
 
+  /** V40: figure out which panel drop-zone (if any) is under the pointer. */
+  const panelZoneAt = useCallback((clientX: number, clientY: number): "hold" | "unassigned" | null => {
+    if (!figmaCard) return null;
+    const els = document.elementsFromPoint(clientX, clientY);
+    for (const el of els) {
+      const zone = (el as HTMLElement).getAttribute?.("data-drop-zone");
+      if (zone === "hold" || zone === "unassigned") return zone;
+    }
+    return null;
+  }, [figmaCard]);
+
   useEffect(() => {
     if (drag.kind === "idle") return;
 
@@ -537,43 +742,90 @@ export function DockManagementV3({
       // Update hover slot whenever the drag is (or is about to be) active.
       // Handles the threshold-crossing pointermove where the captured `drag` is still "pending".
       const truck = trucksById[drag.truckId];
+      const justActivated =
+        drag.kind === "pending" &&
+        Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) >= DRAG_THRESHOLD;
+      // V40: the moment a panel-originated drag lifts off, scroll the chart
+      // so the truck's appointment time is in view (no-op if already visible).
+      if (justActivated && panelDragOrigin && truck) {
+        gridRef.current?.scrollAppointmentIntoView(
+          truck.apptMinutes,
+          figmaCard ? 282 : 0,
+        );
+      }
       const pastThreshold =
-        drag.kind === "active" ||
-        (drag.kind === "pending" &&
-          Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) >= DRAG_THRESHOLD);
+        drag.kind === "active" || justActivated;
       if (pastThreshold && truck) {
-        // Hit-test relative to the floating card's top-left, not the cursor,
-        // so the offset is the same no matter where on the card the user
-        // grabbed.
-        const cardLeft = e.clientX - drag.offsetX;
-        const cardTop = e.clientY - drag.offsetY;
-        const hit = gridRef.current?.hitTest(
-          cardLeft - DRAG_INDICATOR_OFFSET_X,
-          cardTop - DRAG_INDICATOR_OFFSET_Y,
-          [truck.apptMinutes],
-        );
-        // Arrived trucks stay locked to their actual arrival time. Everything
-        // else follows the cursor so the user can place the card before or
-        // after its appointment.
-        const locked = isTruckInProgress(drag.truckId);
-        setHoverSlot(
-          hit
-            ? {
-                dockId: hit.dockId,
-                startMinutes: locked
-                  ? lockedStartFor(drag.truckId)
-                  : Math.max(hit.startMinutes, CURRENT_TIME_MINUTES),
-              }
-            : null,
-        );
+        // V40: panel-zone hover takes precedence over grid hit-test.
+        const zone = panelZoneAt(e.clientX, e.clientY);
+        setPanelHoverZone(zone);
+        // Live-reorder within the on-hold list — mutate panelHold during the
+        // drag (same technique as the priority-list reorder). Items outside
+        // the dragging one have CSS transitions on transform, so they slide
+        // smoothly into their new slots.
+        if (panelDragOrigin === "hold" && zone === "hold") {
+          const holdEl = document.querySelector(
+            '[data-drop-zone="hold"]',
+          ) as HTMLElement | null;
+          if (holdEl) {
+            const rect = holdEl.getBoundingClientRect();
+            const cardHeight = zoom === "expanded" ? 74 : 32;
+            const rowStride = cardHeight + 8;
+            const relY = e.clientY - rect.top;
+            // Use mid-card crossing as the swap threshold so reorder triggers
+            // exactly when the cursor passes another item's center, not its edge.
+            const rawIdx = Math.floor((relY + cardHeight / 2) / rowStride);
+            setPanelHold((prev) => {
+              const currentIdx = prev.indexOf(drag.truckId);
+              if (currentIdx === -1) return prev;
+              const targetIdx = Math.max(0, Math.min(prev.length - 1, rawIdx));
+              if (targetIdx === currentIdx) return prev;
+              const next = [...prev];
+              const [removed] = next.splice(currentIdx, 1);
+              next.splice(targetIdx, 0, removed);
+              return next;
+            });
+          }
+        }
+        if (zone) {
+          setHoverSlot(null);
+        } else {
+          // Hit-test relative to the floating card's top-left, not the cursor,
+          // so the offset is the same no matter where on the card the user
+          // grabbed.
+          const cardLeft = e.clientX - drag.offsetX;
+          const cardTop = e.clientY - drag.offsetY;
+          const hit = gridRef.current?.hitTest(
+            cardLeft - DRAG_INDICATOR_OFFSET_X,
+            cardTop - DRAG_INDICATOR_OFFSET_Y,
+            [truck.apptMinutes],
+          );
+          // Arrived trucks stay locked to their actual arrival time. Everything
+          // else follows the cursor so the user can place the card before or
+          // after its appointment.
+          const locked = isTruckInProgress(drag.truckId);
+          setHoverSlot(
+            hit
+              ? {
+                  dockId: hit.dockId,
+                  startMinutes: locked
+                    ? lockedStartFor(drag.truckId)
+                    : Math.max(hit.startMinutes, CURRENT_TIME_MINUTES),
+                }
+              : null,
+          );
+        }
       }
     };
 
     const onUp = (e: PointerEvent) => {
       const wasActive = drag.kind === "active";
       const current = drag;
+      const originZone = panelDragOrigin;
       document.body.classList.remove("dragging");
       setHoverSlot(null);
+      setPanelHoverZone(null);
+      setPanelDragOrigin(null);
       setDrag({ kind: "idle" });
 
       if (!wasActive) return; // Was a click, not a drag — let the click event fire normally.
@@ -589,6 +841,38 @@ export function DockManagementV3({
         window.removeEventListener("click", suppressClick, true),
       );
 
+      // V40: panel-zone drop takes precedence over grid hit-test.
+      const droppedZone = panelZoneAt(e.clientX, e.clientY);
+      if (figmaCard && droppedZone) {
+        // In-progress trucks can't live on the panel — same rule as dropping
+        // them on an on-hold dock pre-V40. Show the existing acknowledgement modal.
+        if (isTruckInProgress(current.truckId)) {
+          setInProgressHoldError({ truckId: current.truckId, zone: droppedZone });
+          return;
+        }
+        // Same-zone drop after a live-reorder: the order was already updated
+        // in onMove, so don't touch it (re-appending would undo the reorder).
+        if (originZone && originZone === droppedZone) {
+          return;
+        }
+        // Cross-zone move or grid → panel: remove from any existing list, drop
+        // any manual override, then append to the target list.
+        setPanelHold((prev) => prev.filter((id) => id !== current.truckId));
+        setPanelUnassigned((prev) => prev.filter((id) => id !== current.truckId));
+        setManualOverrides((prev) => {
+          if (!(current.truckId in prev)) return prev;
+          const out = { ...prev };
+          delete out[current.truckId];
+          return out;
+        });
+        if (droppedZone === "hold") {
+          setPanelHold((prev) => [...prev, current.truckId]);
+        } else {
+          setPanelUnassigned((prev) => [...prev, current.truckId]);
+        }
+        return;
+      }
+
       const cardLeft = e.clientX - current.offsetX;
       const cardTop = e.clientY - current.offsetY;
       const dragTruckForHit = trucksById[current.truckId];
@@ -599,7 +883,22 @@ export function DockManagementV3({
           dragTruckForHit ? [dragTruckForHit.apptMinutes] : undefined,
         ) ?? null;
       const truck = trucksById[current.truckId];
-      if (!hit || !truck) return;
+      if (!hit || !truck) {
+        // V40: if the drag started in the panel and dropped nowhere meaningful,
+        // ensure the truck stays in its origin list (it may have been filtered out
+        // of the rendered list during drag but the source state was unchanged).
+        return;
+      }
+
+      // V40: drag originated in the panel and landed on the grid — pull it out
+      // of the panel list. Assignment is added via the normal applyMove path below.
+      if (figmaCard && originZone) {
+        if (originZone === "hold") {
+          setPanelHold((prev) => prev.filter((id) => id !== current.truckId));
+        } else {
+          setPanelUnassigned((prev) => prev.filter((id) => id !== current.truckId));
+        }
+      }
 
       // For in-progress trucks, keep storing the scheduled appt time —
       // getBarRange shifts the bar to actualArrival, so the card stays put.
@@ -622,7 +921,7 @@ export function DockManagementV3({
         isTruckInProgress(current.truckId) &&
         holdSlotIds.includes(hit.dockId)
       ) {
-        setInProgressHoldError({ truckId: current.truckId });
+        setInProgressHoldError({ truckId: current.truckId, zone: "hold" });
         return;
       }
 
@@ -692,6 +991,25 @@ export function DockManagementV3({
     applyClearOverride(truckId);
   };
 
+  const moveTruckToPanel = useCallback(
+    (truckId: string, zone: "hold" | "unassigned") => {
+      setPanelHold((prev) => prev.filter((id) => id !== truckId));
+      setPanelUnassigned((prev) => prev.filter((id) => id !== truckId));
+      setManualOverrides((prev) => {
+        if (!(truckId in prev)) return prev;
+        const out = { ...prev };
+        delete out[truckId];
+        return out;
+      });
+      if (zone === "hold") {
+        setPanelHold((prev) => [...prev, truckId]);
+      } else {
+        setPanelUnassigned((prev) => [...prev, truckId]);
+      }
+    },
+    [],
+  );
+
   const isManuallyOverridden = (truckId: string) => {
     const cur = assignments.find((a) => a.truckId === truckId);
     return cur?.source === "manual";
@@ -733,6 +1051,7 @@ export function DockManagementV3({
         zoom={zoom}
         onZoomIn={() => setZoom("expanded")}
         onZoomOut={() => setZoom("compact")}
+        toggleZoom={figmaCard}
         blockingMode={blockingMode}
         onEnterBlockingMode={() => setBlockingMode(true)}
         onExitBlockingMode={() => setBlockingMode(false)}
@@ -748,7 +1067,7 @@ export function DockManagementV3({
         shippingHours={shippingHours}
       />
 
-      <div ref={plotAreaRef} className="relative flex flex-col">
+      <div ref={plotAreaRef} className="relative flex flex-col pb-6">
         <ScheduleGrid
         ref={gridRef}
         docks={displayDocks}
@@ -805,14 +1124,20 @@ export function DockManagementV3({
         onStartDrag={startDrag}
         draggingTruckId={drag.kind === "active" ? drag.truckId : null}
         hoverSlot={hoverSlot}
+        dragLockedStartMinutes={
+          drag.kind === "active" ? lockedStartFor(drag.truckId) : null
+        }
         variantByTruckId={variantByTruckId}
         showMenu
-        menuVariantByTruckId={(truckId) => (isManuallyOverridden(truckId) ? "more" : "info")}
+        menuVariantByTruckId={(truckId) =>
+          isTruckDeparted(truckId) || isTruckInProgress(truckId) ? "info" : "more"
+        }
         onMenuOpen={(truckId, anchor) => {
           // Treat the menu trigger like a click on the card itself: make it sticky-expanded.
           setExpandedIds(new Set([truckId]));
-          // Only one action available (Additional info) → skip the popover and open the side sheet directly.
-          if (!isManuallyOverridden(truckId)) {
+          // Departed and in-progress trucks only get "Additional info" → skip the popover
+          // and open the side sheet directly. Neither can be moved to the side panel.
+          if (isTruckDeparted(truckId) || isTruckInProgress(truckId)) {
             setDetailTruckId(truckId);
             return;
           }
@@ -839,6 +1164,26 @@ export function DockManagementV3({
         redLate={redLate}
         prismIcon={prismIcon}
         figmaCard={figmaCard}
+        rightOverlay={
+          figmaCard ? (
+            <AssignmentPanel
+              holdTrucks={holdTrucks}
+              unassignedTrucks={unassignedTrucks}
+              density={zoom}
+              isDragging={drag.kind === "active"}
+              draggingTruckId={drag.kind === "active" ? drag.truckId : null}
+              draggingFromZone={panelDragOrigin}
+              hoverZone={panelHoverZone}
+              onStartDragFromPanel={startPanelDrag}
+              treatment={treatment}
+              typefix={typefix}
+              declutter={declutter}
+              redLate={redLate}
+              prismIcon={prismIcon}
+              figmaCard={figmaCard}
+            />
+          ) : null
+        }
         />
 
         {/* Toast — sits just above the legend pill, aligned with plot center */}
@@ -921,6 +1266,30 @@ export function DockManagementV3({
                   label: autoReassignLabel ? "Reset to recommended" : "Auto assign",
                   icon: <RotateCw className="size-6 text-ink" strokeWidth={1.75} />,
                   onSelect: () => handleClearOverride(menu.truckId),
+                },
+              ]
+            : []),
+          // Scheduled trucks can be moved to the side panel sections without dragging.
+          // Departed and in-progress trucks can't be moved off the grid.
+          ...(menu && !isTruckDeparted(menu.truckId) && !isTruckInProgress(menu.truckId)
+            ? [
+                {
+                  id: "put-on-hold",
+                  label: "Put on hold",
+                  icon: <PrismPauseIcon className="size-6 text-ink" />,
+                  onSelect: () => {
+                    if (menu) moveTruckToPanel(menu.truckId, "hold");
+                    setMenu(null);
+                  },
+                },
+                {
+                  id: "unassign",
+                  label: "Unassign truck",
+                  icon: <PrismCloseIcon className="size-6 text-ink" />,
+                  onSelect: () => {
+                    if (menu) moveTruckToPanel(menu.truckId, "unassigned");
+                    setMenu(null);
+                  },
                 },
               ]
             : []),
@@ -1012,16 +1381,36 @@ export function DockManagementV3({
         );
       })()}
 
+      {demoCollisionModalOpen && (
+        <ErrorModal
+          open
+          hideCancel
+          title="Dock 5 conflict detected"
+          description="A truck in progress now overlaps with a scheduled truck. The scheduled truck will be reassigned to an available dock."
+          confirmLabel="Okay"
+          onCancel={() => {
+            setDemoCollisionChoice("confirm");
+            setDemoCollisionModalOpen(false);
+          }}
+          onConfirm={() => {
+            setDemoCollisionChoice("confirm");
+            setDemoCollisionModalOpen(false);
+          }}
+        />
+      )}
+
       {(() => {
         if (!inProgressHoldError) return null;
-        const truck = trucksById[inProgressHoldError.truckId];
-        const verb = truck?.direction === "outbound" ? "loaded" : "unloaded";
+        const description =
+          inProgressHoldError.zone === "hold"
+            ? "It cannot be placed on hold."
+            : "It cannot be unassigned.";
         return (
           <ErrorModal
             open
             hideCancel
-            title={`This truck is already being ${verb}`}
-            description="It cannot be placed on hold."
+            title="This truck is in progress"
+            description={description}
             confirmLabel="OK"
             onCancel={() => setInProgressHoldError(null)}
             onConfirm={() => setInProgressHoldError(null)}

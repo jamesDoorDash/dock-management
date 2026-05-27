@@ -188,6 +188,12 @@ export function Sidebar({ version, onVersionChange, adminOpen, onToggleAdmin }: 
             </div>
             <button
               type="button"
+              onClick={() => {
+                // V40 easter egg: instead of navigating, move every truck on the
+                // current schedule into the Unassigned panel so the panel can be
+                // exercised without manually dragging trucks off the grid.
+                window.dispatchEvent(new CustomEvent("v40:unassign-all"));
+              }}
               className={cn(
                 "w-full h-12 flex items-center gap-3 px-3 rounded-button text-left",
                 "text-ink-subdued hover:bg-surface-hovered hover:text-ink",

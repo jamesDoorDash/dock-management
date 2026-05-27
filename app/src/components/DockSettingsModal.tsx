@@ -26,7 +26,7 @@ function equipmentEnabledCount(eq: DockEquipment): number {
   return EQUIPMENT_TYPES.reduce((n, t) => n + (eq[t.id] ? 1 : 0), 0);
 }
 
-type Tab = "manage" | "priority" | "schedule";
+type Tab = "manage" | "schedule";
 
 interface Hours {
   startMinutes: number;
@@ -71,6 +71,7 @@ export function DockSettingsModal({
   const [docks, setDocks] = useState<Dock[]>(docksProp);
   const [priorityOrder, setPriorityOrder] = useState<string[]>(priorityOrderProp);
   const [rearranging, setRearranging] = useState(false);
+  const [prioritizing, setPrioritizing] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [recv, setRecv] = useState<Hours>(receivingHoursProp);
@@ -212,15 +213,12 @@ export function DockSettingsModal({
           <div
             className={cn(
               "mt-5 inline-flex w-full items-center rounded-button border border-line-hovered bg-white",
-              (addingDock || rearranging || renamingId) && "opacity-40 pointer-events-none",
+              (addingDock || rearranging || prioritizing || renamingId) && "opacity-40 pointer-events-none",
             )}
-            aria-disabled={addingDock || rearranging || !!renamingId || undefined}
+            aria-disabled={addingDock || rearranging || prioritizing || !!renamingId || undefined}
           >
             <TabButton active={tab === "manage"} onClick={() => setTab("manage")}>
               Manage docks
-            </TabButton>
-            <TabButton active={tab === "priority"} onClick={() => setTab("priority")}>
-              Dock priority
             </TabButton>
             <TabButton active={tab === "schedule"} onClick={() => setTab("schedule")}>
               Dock schedule
@@ -236,6 +234,10 @@ export function DockSettingsModal({
               activeCount={activeCount}
               rearranging={rearranging}
               setRearranging={setRearranging}
+              prioritizing={prioritizing}
+              setPrioritizing={setPrioritizing}
+              priorityOrder={priorityOrder}
+              reorderPriority={reorderPriority}
               renamingId={renamingId}
               renameValue={renameValue}
               setRenameValue={setRenameValue}
@@ -254,9 +256,6 @@ export function DockSettingsModal({
               cancelAddDock={cancelAddDock}
             />
           )}
-          {tab === "priority" && (
-            <DockPriorityTab docks={docks} priorityOrder={priorityOrder} reorder={reorderPriority} />
-          )}
           {tab === "schedule" && (
             <DockScheduleTab recv={recv} setRecv={setRecv} ship={ship} setShip={setShip} />
           )}
@@ -274,10 +273,10 @@ export function DockSettingsModal({
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={addingDock || rearranging || !!renamingId}
+            disabled={addingDock || rearranging || prioritizing || !!renamingId}
             className={cn(
               "h-10 px-4 rounded-button text-body-md-strong",
-              addingDock || rearranging || renamingId
+              addingDock || rearranging || prioritizing || renamingId
                 ? "bg-surface-strong text-icon-disabled cursor-not-allowed"
                 : "bg-ink text-white hover:opacity-90",
             )}
@@ -305,6 +304,10 @@ export function DockSettingsModal({
                   const d = docks.find((x) => x.id === menu.dockId);
                   if (d) startRename(d);
                 },
+                onEditPriority: () => {
+                  setTab("manage");
+                  setPrioritizing(true);
+                },
                 onDelete: () => handleDelete(menu.dockId),
               })
             : []
@@ -319,12 +322,14 @@ function dockMenuSections({
   onToggleEquipment,
   onPrint,
   onRename,
+  onEditPriority,
   onDelete,
 }: {
   equipment: DockEquipment;
   onToggleEquipment: (type: EquipmentType) => void;
   onPrint: () => void;
   onRename: () => void;
+  onEditPriority: () => void;
   onDelete: () => void;
 }): PopoverSection[] {
   return [
@@ -354,6 +359,12 @@ function dockMenuSections({
           label: "Rename dock",
           icon: <Pencil className="size-5 text-ink" strokeWidth={1.75} />,
           onSelect: onRename,
+        },
+        {
+          id: "edit-priority",
+          label: "Edit dock priority",
+          icon: <PrismSortIcon className="size-5 text-ink" />,
+          onSelect: onEditPriority,
         },
         {
           id: "delete",
@@ -399,6 +410,10 @@ function ManageDocksTab({
   activeCount,
   rearranging,
   setRearranging,
+  prioritizing,
+  setPrioritizing,
+  priorityOrder,
+  reorderPriority,
   renamingId,
   renameValue,
   setRenameValue,
@@ -420,6 +435,10 @@ function ManageDocksTab({
   activeCount: number;
   rearranging: boolean;
   setRearranging: (v: boolean) => void;
+  prioritizing: boolean;
+  setPrioritizing: (v: boolean) => void;
+  priorityOrder: string[];
+  reorderPriority: (from: number, to: number) => void;
   renamingId: string | null;
   renameValue: string;
   setRenameValue: (v: string) => void;
@@ -447,17 +466,39 @@ function ManageDocksTab({
     containerTop: number;
   } | null>(null);
 
+  // Active mode for the drag overlay
+  const mode: "list" | "rearrange" | "priority" = prioritizing
+    ? "priority"
+    : rearranging
+      ? "rearrange"
+      : "list";
+
+  const docksById = useMemo(
+    () => Object.fromEntries(docks.map((d) => [d.id, d])),
+    [docks],
+  );
+  // The ordered list of dock objects shown in the overlay (matches whichever
+  // ordering the active mode is editing).
+  const overlayDocks: Dock[] = useMemo(() => {
+    if (mode === "priority") {
+      return priorityOrder.map((id) => docksById[id]).filter(Boolean) as Dock[];
+    }
+    return docks;
+  }, [mode, docks, priorityOrder, docksById]);
+  const overlayReorder =
+    mode === "priority" ? reorderPriority : reorder;
+
   useEffect(() => {
     if (!drag) return;
     const onMove = (e: PointerEvent) => {
       const draggedTop = e.clientY - drag.pointerOffset - drag.containerTop;
       const targetIdx = Math.max(
         0,
-        Math.min(docks.length - 1, Math.round(draggedTop / REARRANGE_ROW_H)),
+        Math.min(overlayDocks.length - 1, Math.round(draggedTop / REARRANGE_ROW_H)),
       );
-      const currentIdx = docks.findIndex((d) => d.id === drag.id);
+      const currentIdx = overlayDocks.findIndex((d) => d.id === drag.id);
       if (currentIdx !== -1 && targetIdx !== currentIdx) {
-        reorder(currentIdx, targetIdx);
+        overlayReorder(currentIdx, targetIdx);
       }
       setDrag((d) => (d ? { ...d, cursorY: e.clientY } : d));
     };
@@ -468,7 +509,7 @@ function ManageDocksTab({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [drag, docks, reorder]);
+  }, [drag, overlayDocks, overlayReorder]);
 
   const isRenaming = !!renamingId;
   const lockUI = addingDock || isRenaming;
@@ -480,10 +521,26 @@ function ManageDocksTab({
           lockUI && "pointer-events-none",
         )}
       >
-        <p className={cn("text-body-md-strong text-ink", lockUI && "opacity-40")}>
-          {rearranging ? "Drag to rearrange dock order" : `${activeCount} active docks`}
-        </p>
-        {rearranging ? (
+        {mode === "rearrange" ? (
+          <div className={cn(lockUI && "opacity-40")}>
+            <p className="text-body-md-strong text-ink">Drag to rearrange dock order</p>
+            <p className="text-body-sm text-ink-subdued">
+              Order should match how the docks are arranged in the warehouse
+            </p>
+          </div>
+        ) : mode === "priority" ? (
+          <div className={cn(lockUI && "opacity-40")}>
+            <p className="text-body-md-strong text-ink">Drag to assign priority</p>
+            <p className="text-body-sm text-ink-subdued">
+              Docks at the top of the list will be auto-assigned trucks first
+            </p>
+          </div>
+        ) : (
+          <p className={cn("text-body-lg-strong text-ink", lockUI && "opacity-40")}>
+            {`${activeCount} active docks`}
+          </p>
+        )}
+        {mode === "rearrange" ? (
           <button
             type="button"
             onClick={() => setRearranging(false)}
@@ -493,6 +550,17 @@ function ManageDocksTab({
             )}
           >
             Done rearranging
+          </button>
+        ) : mode === "priority" ? (
+          <button
+            type="button"
+            onClick={() => setPrioritizing(false)}
+            className={cn(
+              "h-9 px-3 rounded-button bg-ink text-body-sm-strong text-white hover:opacity-90",
+              lockUI && "opacity-40",
+            )}
+          >
+            Done prioritizing
           </button>
         ) : (
           <button
@@ -509,14 +577,30 @@ function ManageDocksTab({
         )}
       </div>
 
-      {rearranging ? (
-        <div className="flex-1 min-h-0 overflow-y-auto mt-2 -mx-2 px-2">
+      {mode !== "list" ? (
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden mt-2 -mx-2 px-2">
+        <div className={cn("flex gap-3", addingDock && "opacity-40 pointer-events-none")}>
+        <div
+          className="flex flex-col shrink-0"
+          aria-hidden
+          style={{ height: overlayDocks.length * REARRANGE_ROW_H }}
+        >
+          {overlayDocks.map((_, idx) => (
+            <div
+              key={idx}
+              style={{ height: 48, marginBottom: REARRANGE_ROW_H - 48 }}
+              className="w-6 flex items-center justify-start text-body-md text-ink-subdued tabular-nums"
+            >
+              {mode === "priority" ? priorityLetter(idx) : idx + 1}
+            </div>
+          ))}
+        </div>
         <div
           ref={containerRef}
-          className={cn("relative", addingDock && "opacity-40 pointer-events-none")}
-          style={{ height: docks.length * REARRANGE_ROW_H }}
+          className="relative flex-1"
+          style={{ height: overlayDocks.length * REARRANGE_ROW_H }}
         >
-          {docks.map((d, idx) => {
+          {overlayDocks.map((d, idx) => {
             const isDragging = drag?.id === d.id;
             const y = isDragging
               ? drag.cursorY - drag.pointerOffset - drag.containerTop
@@ -559,6 +643,7 @@ function ManageDocksTab({
               </div>
             );
           })}
+        </div>
         </div>
         </div>
       ) : (
@@ -630,18 +715,30 @@ function ManageDocksTab({
         >
           <table className="w-full table-fixed border-separate border-spacing-0">
             <colgroup>
-              <col style={{ width: "80px" }} />
               <col />
-              <col style={{ width: "110px" }} />
-              <col style={{ width: "210px" }} />
-              <col style={{ width: "80px" }} />
+              <col />
+              <col />
+              <col />
+              <col />
+              <col />
             </colgroup>
             <thead>
               <tr>
-                <th className="border-b border-line px-3 pl-4 py-3 text-left text-body-sm-strong text-ink">Active</th>
-                <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink">Dock name</th>
-                <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink">Dock ID</th>
-                <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink whitespace-nowrap">Equipment eligibility</th>
+                <th className="border-b border-line px-3 pl-4 py-3 text-left text-body-sm-strong text-ink">
+                  <HeaderLabel label="Active" tooltip="Toggle to take this dock out of service. Inactive docks won't accept new truck assignments." />
+                </th>
+                <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink">
+                  <HeaderLabel label="Dock name" tooltip="Display name for this dock. Should match the dock name in the warehouse." />
+                </th>
+                <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink">
+                  <HeaderLabel label="Dock priority" tooltip="Order in which trucks are automatically assigned to dock doors. A is the highest priority, B is second, and so on." />
+                </th>
+                <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink">
+                  <HeaderLabel label="Dock ID" tooltip="Unique identifier for this dock." />
+                </th>
+                <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink whitespace-nowrap">
+                  <HeaderLabel label="Equipment eligibility" tooltip="Equipment types this dock can't accept. Trucks with ineligible equipment types won't be auto-assigned." />
+                </th>
                 <th className="border-b border-line px-3 pr-4 py-3 text-right text-body-sm-strong text-ink">Actions</th>
               </tr>
             </thead>
@@ -649,7 +746,7 @@ function ManageDocksTab({
         </div>
         {/* Scrolling body + Add dock — scrollbar hidden, frame above/below stays still */}
         <div
-          className="flex-1 min-h-0 overflow-y-auto flex flex-col [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          className="flex-1 min-h-0 overflow-y-auto flex flex-col pb-8 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
         >
           <div
             className={cn(
@@ -659,17 +756,19 @@ function ManageDocksTab({
           >
             <table className="w-full table-fixed border-separate border-spacing-0">
               <colgroup>
-                <col style={{ width: "80px" }} />
                 <col />
-                <col style={{ width: "110px" }} />
-                <col style={{ width: "210px" }} />
-                <col style={{ width: "80px" }} />
+                <col />
+                <col />
+                <col />
+                <col />
+                <col />
               </colgroup>
               <tbody>
                 {docks.map((d, idx) => (
                   <ManageDockRow
                     key={d.id}
                     dock={d}
+                    priority={priorityLetter(priorityOrder.indexOf(d.id))}
                     isLast={idx === docks.length - 1}
                     isRenaming={false}
                     hideExtraColumns={false}
@@ -725,11 +824,11 @@ function ManageDocksTab({
               onClick={startAddDock}
               disabled={isRenaming}
               className={cn(
-                "mt-3 self-start inline-flex items-center gap-1.5 text-body-md-strong text-ink hover:text-ink-subdued",
+                "mt-3 self-start shrink-0 h-10 px-3 inline-flex items-center gap-1 rounded-button border border-line-strong bg-white text-body-md-strong text-ink hover:bg-surface-hovered",
                 isRenaming && "opacity-40 pointer-events-none",
               )}
             >
-              <Plus className="size-4" />
+              <PrismPlus16 className="size-4" />
               Add dock
             </button>
           )}
@@ -742,8 +841,30 @@ function ManageDocksTab({
   );
 }
 
+function priorityLetter(idx: number): string {
+  // A, B, C, ... Z, AA, AB, ...
+  let n = idx;
+  let s = "";
+  do {
+    s = String.fromCharCode(65 + (n % 26)) + s;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return s;
+}
+
+function HeaderLabel({ label, tooltip }: { label: string; tooltip: string }) {
+  return (
+    <Tooltip label={tooltip} wide>
+      <span className="underline decoration-dotted decoration-ink-subdued underline-offset-4 cursor-help">
+        {label}
+      </span>
+    </Tooltip>
+  );
+}
+
 function ManageDockRow({
   dock,
+  priority,
   isLast,
   isRenaming,
   hideExtraColumns,
@@ -756,6 +877,7 @@ function ManageDockRow({
   onMenuOpen,
 }: {
   dock: Dock;
+  priority: string;
   isLast: boolean;
   isRenaming: boolean;
   hideExtraColumns: boolean;
@@ -797,6 +919,9 @@ function ManageDockRow({
       </td>
       {!hideExtraColumns && (
         <>
+          <td className={cn(tdBase, tdBorder)}>
+            <span className="text-body-md-strong text-ink">{priority}</span>
+          </td>
           <td className={cn(tdBase, tdBorder)}>
             <Tooltip label={dock.uuid}>
               <span className="text-body-sm text-ink-subdued underline decoration-dotted decoration-ink-subdued underline-offset-2 cursor-default">
@@ -1000,7 +1125,7 @@ function DockPriorityTab({
           {priorityOrder.map((_, idx) => (
             <div
               key={idx}
-              style={{ height: ROW_H }}
+              style={{ height: 48, marginBottom: ROW_H - 48 }}
               className="w-6 flex items-center justify-start text-body-md text-ink-subdued tabular-nums"
             >
               {idx + 1}
@@ -1055,6 +1180,29 @@ function DockPriorityTab({
         </div>
       </div>
     </div>
+  );
+}
+
+/** Prism 16/plus icon. */
+function PrismPlus16({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M7 14V9H2C1.44772 9 1 8.55228 1 8C1 7.44772 1.44772 7 2 7H7V2C7 1.44772 7.44772 1 8 1C8.55228 1 9 1.44772 9 2V7H14C14.5523 7 15 7.44772 15 8C15 8.55228 14.5523 9 14 9H9V14C9 14.5523 8.55228 15 8 15C7.44772 15 7 14.5523 7 14Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** Prism 24/sort icon — two arrows, up and down. Path traced from Figma node 4404:100696. */
+function PrismSortIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 23 17.1714"
+      fill="currentColor"
+      className={className}
+      aria-hidden
+    >
+      <path d="M16.4999 1.08579C16.4999 0.533502 16.9476 0.0857865 17.4999 0.0857865C18.0522 0.0857865 18.4999 0.533502 18.4999 1.08579V14.1717L21.2929 11.3788C21.6834 10.9882 22.3164 10.9882 22.7069 11.3788C23.0974 11.7693 23.0974 12.4023 22.7069 12.7928L18.9139 16.5858C18.1329 17.3666 16.8668 17.3666 16.0858 16.5858L12.2929 12.7928C11.9024 12.4023 11.9024 11.7693 12.2929 11.3788C12.6834 10.9882 13.3164 10.9882 13.7069 11.3788L16.4999 14.1717V1.08579ZM4.49989 16.0858V2.99985L1.70692 5.79282C1.31641 6.18324 0.683361 6.18324 0.292856 5.79282C-0.0976436 5.40232 -0.0975934 4.76929 0.292856 4.37876L4.08582 0.585786C4.86687 -0.195263 6.1329 -0.195261 6.91395 0.585786L10.7069 4.37876C11.0974 4.76929 11.0974 5.40232 10.7069 5.79282C10.3164 6.18324 9.68336 6.18324 9.29286 5.79282L6.49989 2.99985V16.0858C6.49981 16.638 6.05212 17.0858 5.49989 17.0858C4.94765 17.0858 4.49997 16.638 4.49989 16.0858Z" />
+    </svg>
   );
 }
 

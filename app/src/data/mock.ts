@@ -18,7 +18,10 @@ export const SCHEDULE_END_MINUTES = 29 * 60;
  * current-time indicator on the chart and to decide which trucks are still
  * "future" (and therefore use default durations).
  */
-export const CURRENT_TIME_MINUTES = 14 * 60 + 15;
+export let CURRENT_TIME_MINUTES = 14 * 60 + 15;
+export function setCurrentTimeMinutes(m: number) {
+  CURRENT_TIME_MINUTES = m;
+}
 
 /** Default dock occupation when we don't have a real departure yet. */
 const DEFAULT_DURATION = {

@@ -328,7 +328,7 @@ export function TruckDetailSheet({ open, truck, dockLabel, startMinutes, onClose
                     scheduledValue={arrivalSchedStr}
                     actualSuffix={lateText && data.actualArrival != null ? (
                       <span className="text-[13px] font-medium" style={{ color: lateText.color }}>
-                        · {lateText.text}
+                        ・ {lateText.text}
                       </span>
                     ) : null}
                   />

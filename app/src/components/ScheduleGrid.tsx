@@ -36,6 +36,10 @@ const DENSITY = {
 /** Extra bottom space so the last dock row clears the floating legend pill with breathing room. */
 /** No extra whitespace past the last hour — chart ends at 5 AM tomorrow. */
 const SCROLL_RIGHT_PADDING = 0;
+/** When the right-side AssignmentPanel is mounted, it overlays the rightmost
+ *  ~282px of the scroller. Add that much trailing scroll room so the user can
+ *  scroll the last hours of the day out from underneath the panel. */
+const RIGHT_OVERLAY_WIDTH = 282;
 
 export const GRID_CONSTANTS = { DOCK_COL_WIDTH, HEADER_HEIGHT, DENSITY };
 
@@ -48,6 +52,15 @@ export interface ScheduleGridHandle {
   ) => { dockId: string; startMinutes: number } | null;
   /** Scroll horizontally so the hour boundary before "now" sits at the left edge. */
   scrollToCurrentTime: () => void;
+  /** Scroll horizontally so an appointment is visible. Behavior:
+   *   - If already visible (between sticky dock col and right-inset), no-op.
+   *   - If past the right edge: scroll as far right as possible.
+   *   - If past the left edge: snap so the left edge of the chart shows
+   *     floor(apptHour) - 1 (i.e. at least one hour of lead-in is visible).
+   *  rightInset accounts for an overlay (e.g. the V40 panel) covering the
+   *  right portion of the scroller — pass its width to keep the appointment
+   *  visible OUTSIDE the overlay. */
+  scrollAppointmentIntoView: (apptMinutes: number, rightInset?: number) => void;
 }
 
 interface Props {
@@ -61,6 +74,10 @@ interface Props {
   draggingTruckId: string | null;
   /** The slot the drag pointer is currently over. */
   hoverSlot: { dockId: string; startMinutes: number } | null;
+  /** Locked start time for the dragging truck (in-progress trucks lock to arrival;
+   *  others lock to scheduled appt). Used to keep the appointment-time flag/stick
+   *  visible on the plot even when the cursor is outside the grid. */
+  dragLockedStartMinutes?: number | null;
   /** When set, render assignments using this map: truckId → variant ("compact" | "scheduled"). */
   variantByTruckId?: (truckId: string) => "compact" | "scheduled";
   /** Show the ... menu on each scheduled card. */
@@ -118,6 +135,10 @@ interface Props {
   /** If set, draws a thick divider above the row at this index — used to visually
    *  separate the on-hold rows from the regular dock rows. */
   holdStartIndex?: number;
+  /** V40: arbitrary element rendered absolutely inside the table's bordered card,
+   *  pinned to the right edge. Used for the side panel so it's clipped by the
+   *  table's bounds and doesn't move with horizontal scroll. */
+  rightOverlay?: React.ReactNode;
 }
 
 function BlockedCard({
@@ -153,7 +174,7 @@ function BlockedCard({
   prismIcon?: boolean;
   figmaCard?: boolean;
 }) {
-  const padY = density === "compact" ? 4 : 6;
+  const padY = 4;
   const left = ((startMinutes - SCHEDULE_START_MINUTES) / 60) * hourWidth;
   const width = (durationMinutes / 60) * hourWidth;
   // Blocked slots are always movable/resizable when not a draft. Previously this
@@ -174,7 +195,7 @@ function BlockedCard({
         data-block
         onPointerDown={interactive ? onMoveStart : undefined}
         className={cn(
-          "absolute z-10 flex items-start gap-1 rounded-[8px] px-1 py-1.5 overflow-hidden",
+          "absolute z-10 flex flex-col gap-[2px] rounded-[8px] px-1 py-1.5 overflow-hidden",
           draft && "opacity-80 cursor-grabbing",
           interactive && "cursor-grab active:cursor-grabbing touch-none",
         )}
@@ -187,53 +208,55 @@ function BlockedCard({
           color: "#191919",
         }}
       >
-        <GripVertical
-          aria-hidden
-          className="size-4 shrink-0"
-          style={{ color: "#B71000" }}
-          strokeWidth={2.25}
-        />
-        <span
-          className="flex-1 min-w-0 truncate text-left"
-          style={{
-            color: "#191919",
-            fontFamily: "var(--font-dd-norms, 'DD Norms', system-ui, sans-serif)",
-            fontSize: 14,
-            lineHeight: "20px",
-            fontWeight: 700,
-            letterSpacing: "-0.01px",
-          }}
-        >
-          Blocked
-        </span>
-        {!draft && (
-          <div className="shrink-0 flex items-center gap-1.5">
-            <button
-              type="button"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete?.();
-              }}
-              className="shrink-0 size-4 grid place-items-center rounded hover:bg-black/5"
-              aria-label="Delete block"
-              style={{ color: "#191919" }}
-            >
-              <PrismTrashIcon className="h-4 w-[14px]" />
-            </button>
-            {interactive && (
-              <div
-                onPointerDown={(e) => {
+        <div className="flex items-center gap-1 w-full min-w-0">
+          <GripVertical
+            aria-hidden
+            className="size-4 shrink-0"
+            style={{ color: "#B71000" }}
+            strokeWidth={2.25}
+          />
+          <span
+            className="flex-1 min-w-0 truncate text-left"
+            style={{
+              color: "#191919",
+              fontFamily: "var(--font-dd-norms, 'DD Norms', system-ui, sans-serif)",
+              fontSize: 14,
+              lineHeight: "20px",
+              fontWeight: 700,
+              letterSpacing: "-0.01px",
+            }}
+          >
+            Blocked
+          </span>
+          {!draft && (
+            <div className="shrink-0 flex items-center gap-1.5">
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
                   e.stopPropagation();
-                  onResizeStart?.(e);
+                  onDelete?.();
                 }}
-                className="shrink-0 h-4 w-[2px] rounded-full cursor-ew-resize"
-                style={{ backgroundColor: "#191919" }}
-                aria-label="Resize block"
-              />
-            )}
-          </div>
-        )}
+                className="shrink-0 size-4 grid place-items-center rounded hover:bg-black/5"
+                aria-label="Delete block"
+                style={{ color: "#191919" }}
+              >
+                <PrismTrashIcon className="h-4 w-[14px]" />
+              </button>
+              {interactive && (
+                <div
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    onResizeStart?.(e);
+                  }}
+                  className="shrink-0 h-4 w-[2px] rounded-full cursor-ew-resize"
+                  style={{ backgroundColor: "#191919" }}
+                  aria-label="Resize block"
+                />
+              )}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -329,6 +352,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
     onStartDrag,
     draggingTruckId,
     hoverSlot,
+    dragLockedStartMinutes,
     variantByTruckId,
     showMenu,
     onMenuOpen,
@@ -357,6 +381,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
     nextDayLabel,
     dateIso,
     holdStartIndex,
+    rightOverlay,
   },
   ref,
 ) {
@@ -543,6 +568,35 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
     scroller.scrollLeft = hoursSinceStart * HOUR_WIDTH;
   };
 
+  const scrollAppointmentIntoView = (
+    apptMinutes: number,
+    rightInset = 0,
+  ) => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const apptOffset =
+      ((apptMinutes - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH;
+    const visibleLeft = scroller.scrollLeft;
+    // The sticky dock-label column occupies the leftmost DOCK_COL_WIDTH px of
+    // the viewport; the right overlay (if any) covers the rightmost rightInset.
+    // So the actually-visible chart range is between them.
+    const visibleRight =
+      scroller.scrollLeft + scroller.clientWidth - DOCK_COL_WIDTH - rightInset;
+    if (apptOffset >= visibleLeft && apptOffset <= visibleRight) return;
+    let nextLeft: number;
+    if (apptOffset > visibleRight) {
+      // Past the right edge — scroll as far right as the scroller allows.
+      nextLeft = scroller.scrollWidth - scroller.clientWidth;
+    } else {
+      // Past the left edge — snap so left chart edge = floor(apptHour) - 1h,
+      // guaranteeing at least an hour of lead-in is in view.
+      const apptHourMin = Math.floor(apptMinutes / 60) * 60;
+      const targetMin = Math.max(SCHEDULE_START_MINUTES, apptHourMin - 60);
+      nextLeft = ((targetMin - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH;
+    }
+    scroller.scrollTo({ left: nextLeft, behavior: "smooth" });
+  };
+
   // Latest assignments — read inside the date-change effect without retriggering it on every drop.
   const assignmentsRef = useRef(assignments);
   useEffect(() => {
@@ -579,6 +633,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
 
   useImperativeHandle(ref, () => ({
     scrollToCurrentTime,
+    scrollAppointmentIntoView,
     hitTest(clientX, clientY, extraSnapMinutes) {
       const el = gridRef.current;
       if (!el) return null;
@@ -607,7 +662,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
 
   return (
     <div className="px-10 flex flex-col">
-      <div className="bg-white flex flex-col border border-line rounded-card overflow-hidden">
+      <div className="relative bg-white flex flex-col border border-line rounded-card overflow-hidden">
         <div
           ref={scrollerRef}
           className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -620,7 +675,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
         >
           <div
             className="relative"
-            style={{ width: DOCK_COL_WIDTH + totalWidth + SCROLL_RIGHT_PADDING }}
+            style={{ width: DOCK_COL_WIDTH + totalWidth + SCROLL_RIGHT_PADDING + (rightOverlay ? RIGHT_OVERLAY_WIDTH : 0) }}
           >
             {/* Time header — border-b lives on the inner children so it stops at the
                 chart's right edge instead of extending into the right whitespace. */}
@@ -670,14 +725,45 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                           strokeLinejoin="round"
                         />
                       </svg>
-                      {/* Bridge from triangle tip down through the header so the stem in the
-                          grid (which sits behind the sticky header bg) appears continuous. */}
+                      {/* Bridge from triangle tip down to the header bottom so the stem in
+                          the grid (which sits behind the sticky header bg) appears continuous.
+                          Height capped to 3px so it doesn't bleed into the body's dock-label
+                          column (header z-20 paints over body's z-10 sticky col). */}
                       <div
                         className="absolute left-1/2 -translate-x-1/2 w-0.5"
-                        style={{ top: 10, height: 6, backgroundColor: "#6b7280" }}
+                        style={{ top: 10, height: 3, backgroundColor: "#6b7280" }}
                       />
                     </div>
                   )}
+                {/* Appointment-time flag — lives inside the time area so the
+                    sticky dock-label column (z-10 in this header) covers it
+                    when it bleeds left, instead of painting over dock numbers. */}
+                {draggingTruckId && !(isDepartedTruckId?.(draggingTruckId) ?? false) && (() => {
+                  const inProgress = isInProgressTruckId?.(draggingTruckId) ?? false;
+                  const dragTruck = trucksById[draggingTruckId];
+                  const fallbackMinutes = inProgress
+                    ? dragLockedStartMinutes ?? dragTruck?.apptMinutes
+                    : dragTruck?.apptMinutes;
+                  const flagMinutes = inProgress
+                    ? hoverSlot?.startMinutes ?? fallbackMinutes
+                    : dragTruck?.apptMinutes ?? hoverSlot?.startMinutes ?? fallbackMinutes;
+                  if (flagMinutes == null) return null;
+                  const flagX =
+                    ((flagMinutes - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH;
+                  return (
+                    <div
+                      className="absolute pointer-events-none -translate-x-1/2 flex flex-col items-center justify-center px-3 rounded-button bg-ink text-white whitespace-nowrap shadow-card"
+                      style={{ left: flagX, top: 0, height: HEADER_HEIGHT }}
+                    >
+                      <span className="text-label-xs-strong uppercase tracking-wider text-white/70 leading-none">
+                        {inProgress ? "Arrival time" : "Appointment time"}
+                      </span>
+                      <span className="text-body-md-strong leading-tight mt-0.5">
+                        {formatTime(flagMinutes)}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -742,6 +828,28 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                     style={{ top: holdStartIndex * ROW_HEIGHT - 2, height: 4 }}
                   />
                 )}
+
+                {/* Appointment-time stick — inside the grid so the sticky dock-label
+                    column (a sibling at z-10) covers it instead of painting over dock numbers. */}
+                {draggingTruckId && !(isDepartedTruckId?.(draggingTruckId) ?? false) && (() => {
+                  const inProgress = isInProgressTruckId?.(draggingTruckId) ?? false;
+                  const dragTruck = trucksById[draggingTruckId];
+                  const fallbackMinutes = inProgress
+                    ? dragLockedStartMinutes ?? dragTruck?.apptMinutes
+                    : dragTruck?.apptMinutes;
+                  const flagMinutes = inProgress
+                    ? hoverSlot?.startMinutes ?? fallbackMinutes
+                    : dragTruck?.apptMinutes ?? hoverSlot?.startMinutes ?? fallbackMinutes;
+                  if (flagMinutes == null) return null;
+                  const stickX =
+                    ((flagMinutes - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH;
+                  return (
+                    <div
+                      className="absolute pointer-events-none border-l-2 border-ink"
+                      style={{ left: stickX, top: 0, bottom: 0, zIndex: 51 }}
+                    />
+                  );
+                })()}
 
                 {/* Current-time line — inside the grid, rendered before assignments so trucks paint on top */}
                 {showCurrentTime &&
@@ -960,50 +1068,11 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
               </div>
             </div>
 
-            {/* Appointment-time guide — overlays the whole chart (above the sticky header)
-                so labels and the stick aren't clipped. Rendered last so it z-stacks on top. */}
-            {hoverSlot && draggingTruckId && (() => {
-              const inProgress = isInProgressTruckId?.(draggingTruckId) ?? false;
-              const departed = isDepartedTruckId?.(draggingTruckId) ?? false;
-              const dragTruck = trucksById[draggingTruckId];
-              // Arrived trucks are locked to their arrival time — the flag
-              // tracks the (locked) hoverSlot. Every other status shows the
-              // appointment time at a fixed position even as the card is
-              // rearranged before or after that time.
-              const flagMinutes = inProgress
-                ? hoverSlot.startMinutes
-                : dragTruck?.apptMinutes ?? hoverSlot.startMinutes;
-              const guideX =
-                DOCK_COL_WIDTH +
-                ((flagMinutes - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH;
-              // (departed never drags, but keep the flag silent if it ever did)
-              if (departed) return null;
-              return (
-                <>
-                  {/* Solid vertical stick — starts at the top of the dock rows and runs to
-                      the bottom of the chart. z-10 keeps it behind the floating legend (z-20). */}
-                  <div
-                    className="absolute z-10 pointer-events-none border-l-2 border-ink"
-                    style={{ left: guideX, top: HEADER_HEIGHT, bottom: 0 }}
-                  />
-                  {/* Flag sits flush inside the header bar (no overhang above). */}
-                  <div
-                    className="absolute z-30 pointer-events-none -translate-x-1/2 flex flex-col items-center justify-center px-3 rounded-button bg-ink text-white whitespace-nowrap shadow-card"
-                    style={{ left: guideX, top: 0, height: HEADER_HEIGHT }}
-                  >
-                    <span className="text-label-xs-strong uppercase tracking-wider text-white/70 leading-none">
-                      {inProgress ? "Arrival time" : "Appointment time"}
-                    </span>
-                    <span className="text-body-md-strong leading-tight mt-0.5">
-                      {formatTime(flagMinutes)}
-                    </span>
-                  </div>
-                </>
-              );
-            })()}
           </div>
         </div>
+        {rightOverlay}
       </div>
+      {/* Horizontal proxy scrollbar — hidden for V40. To restore, un-comment:
       <div
         ref={proxyScrollbarRef}
         className="overflow-x-auto scrollbar-thin mt-2"
@@ -1017,6 +1086,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
       >
         <div style={{ width: DOCK_COL_WIDTH + totalWidth + SCROLL_RIGHT_PADDING, height: 1 }} />
       </div>
+      */}
     </div>
   );
 });
