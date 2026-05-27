@@ -1238,13 +1238,13 @@ function DockScheduleTab({
     <div className="pt-4 space-y-6 flex-1 min-h-0 overflow-y-auto">
       <HoursSection
         title="Receiving hours"
-        subtitle="Hours trucks can be unloaded at this facility"
+        subtitle="Hours inbound trucks can be auto-assigned to a dock"
         hours={recv}
         onChange={setRecv}
       />
       <HoursSection
         title="Shipping hours"
-        subtitle="Hours trucks can be loaded at this facility"
+        subtitle="Hours outbound trucks can be auto-assigned to a dock"
         hours={ship}
         onChange={setShip}
       />

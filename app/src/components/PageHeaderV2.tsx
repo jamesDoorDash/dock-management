@@ -9,6 +9,28 @@ function PrismPlus16({ className }: { className?: string }) {
   );
 }
 
+/** Prism 24/menu icon (three horizontal lines) — V41 "Detailed" toggle.
+ *  Exact path traced from Figma node 4421:383143 — inner 20×14 art inset into a 24×24 box
+ *  (top/bottom 20.83%, left/right 8.33%, matching the Figma component). */
+function PrismMenu24({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <svg x="2" y="5" width="20" height="14" viewBox="0 0 20 14" fill="none" overflow="visible">
+        <path d="M19 12C19.5522 12 19.9999 12.4478 20 13C20 13.5523 19.5523 14 19 14H1C0.447715 14 0 13.5523 0 13C6.59659e-05 12.4478 0.447756 12 1 12H19ZM19 6C19.5522 6 19.9999 6.44777 20 7C20 7.55228 19.5523 8 19 8H1C0.447715 8 0 7.55228 0 7C6.59659e-05 6.44777 0.447756 6 1 6H19ZM19 0C19.5523 0 20 0.447715 20 1C20 1.55228 19.5523 2 19 2H1C0.447715 2 0 1.55228 0 1C0 0.447715 0.447715 0 1 0H19Z" fill="currentColor"/>
+      </svg>
+    </svg>
+  );
+}
+
+/** Prism 24/dock-left-line icon — V41 "Dense" toggle. */
+function PrismDockLeftLine24({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M18 2C20.2091 2 22 3.79086 22 6V18C22 20.2091 20.2091 22 18 22H6C3.79086 22 2 20.2091 2 18V6C2 3.79086 3.79086 2 6 2H18ZM4 16V18C4 19.1046 4.89543 20 6 20H18C19.1046 20 20 19.1046 20 18V16H4ZM4 14H20V10H4V14ZM6 4C4.89543 4 4 4.89543 4 6V8H20V6C20 4.89543 19.1046 4 18 4H6Z" fill="currentColor"/>
+    </svg>
+  );
+}
+
 function PrismEditLine16({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -36,6 +58,8 @@ interface Props {
   onZoomOut: () => void;
   /** V40: render zoom controls as a Prism Button Toggle Group instead of two separate buttons. */
   toggleZoom?: boolean;
+  /** V41: replace the zoom toggle with two "Detailed" / "Dense" icon buttons on the leading edge. */
+  densityToggle?: boolean;
   blockingMode: boolean;
   onEnterBlockingMode: () => void;
   onExitBlockingMode: () => void;
@@ -80,6 +104,7 @@ export function PageHeaderV2({
   onZoomIn,
   onZoomOut,
   toggleZoom,
+  densityToggle,
   blockingMode,
   onEnterBlockingMode,
   onExitBlockingMode,
@@ -160,7 +185,36 @@ export function PageHeaderV2({
 
           <div className="w-4" />
 
-          {toggleZoom ? (
+          {densityToggle ? (
+            <div className="inline-flex items-center justify-center bg-white border border-line-strong rounded-button shrink-0">
+              <button
+                type="button"
+                onClick={onZoomOut}
+                aria-pressed={zoom === "compact"}
+                style={zoom === "compact" ? { outline: "2px solid #111318", outlineOffset: "-1px" } : undefined}
+                className={cn(
+                  "h-10 px-3 py-1 inline-flex items-center justify-center gap-1 rounded-button text-body-md-strong whitespace-nowrap shrink-0 relative",
+                  zoom === "compact" ? "text-ink z-10" : "text-ink-subdued",
+                )}
+              >
+                <PrismMenu24 className="size-5" />
+                Dense
+              </button>
+              <button
+                type="button"
+                onClick={onZoomIn}
+                aria-pressed={zoom === "expanded"}
+                style={zoom === "expanded" ? { outline: "2px solid #111318", outlineOffset: "-1px" } : undefined}
+                className={cn(
+                  "h-10 px-3 py-1 inline-flex items-center justify-center gap-1 rounded-button text-body-md-strong whitespace-nowrap shrink-0 relative",
+                  zoom === "expanded" ? "text-ink z-10" : "text-ink-subdued",
+                )}
+              >
+                <PrismDockLeftLine24 className="size-5" />
+                Detailed
+              </button>
+            </div>
+          ) : toggleZoom ? (
             <div className="inline-flex items-center justify-center bg-white border border-line-strong rounded-button shrink-0">
               <button
                 type="button"

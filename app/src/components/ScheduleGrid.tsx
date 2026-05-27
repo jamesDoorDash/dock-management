@@ -128,6 +128,8 @@ interface Props {
   prismIcon?: boolean;
   /** V40: render TruckCards with the bespoke Figma layout. */
   figmaCard?: boolean;
+  /** V41: taller (94px) card layout with inbound/outbound row — also bumps expanded ROW_HEIGHT to fit. */
+  v41Card?: boolean;
   /** Short label for the day after the viewed date (e.g. "May 14"), shown on past-midnight hour headers. */
   nextDayLabel?: string;
   /** Viewed date (ISO). Used as the trigger for auto-scrolling on day change. */
@@ -378,6 +380,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
     redLate,
     prismIcon,
     figmaCard,
+    v41Card,
     nextDayLabel,
     dateIso,
     holdStartIndex,
@@ -388,8 +391,12 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
   const { HOUR_WIDTH, ROW_HEIGHT: BASE_ROW_HEIGHT } = DENSITY[density];
   // Typefix removes the load-type tag line from expanded cards, so the row can
   // shrink by roughly one line + its gap.
+  // V41 bumps the card from 74→94, so the expanded row needs +20 to keep the
+  // same 8px breathing room around the card.
   const ROW_HEIGHT =
-    typefix && density === "expanded" ? BASE_ROW_HEIGHT - 22 : BASE_ROW_HEIGHT;
+    typefix && density === "expanded"
+      ? BASE_ROW_HEIGHT - 22 + (v41Card ? 20 : 0)
+      : BASE_ROW_HEIGHT;
   const totalMinutes = SCHEDULE_END_MINUTES - SCHEDULE_START_MINUTES;
   const totalWidth = (totalMinutes / 60) * HOUR_WIDTH;
   const totalHeight = docks.length * ROW_HEIGHT;
@@ -1053,6 +1060,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                         redLate={redLate}
                         prismIcon={prismIcon}
                         figmaCard={figmaCard}
+                        v41Card={v41Card}
                         barStatus={barStatus}
                         showMenu={showMenu}
                         menuVariant={menuVariantByTruckId?.(a.truckId) ?? "more"}

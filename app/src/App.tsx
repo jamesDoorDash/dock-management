@@ -42,13 +42,13 @@ const TREATMENT_VERSIONS: PrototypeVersion[] = [
 function versionToTreatment(v: PrototypeVersion): Treatment {
   // V34 (Typefix) is V20's TruckCard treatment with type overrides layered on
   // top via the `.typefix` CSS scope.
-  if (v === "v34" || v === "v35" || v === "v36" || v === "v37" || v === "v38" || v === "v39" || v === "v40") return "v20" as Treatment;
+  if (v === "v34" || v === "v35" || v === "v36" || v === "v37" || v === "v38" || v === "v39" || v === "v40" || v === "v41") return "v20" as Treatment;
   if (TREATMENT_VERSIONS.includes(v)) return v as Treatment;
   return "default";
 }
 
 export default function App() {
-  const [version, setVersion] = useState<PrototypeVersion>("v40");
+  const [version, setVersion] = useState<PrototypeVersion>("v41");
   const [adminOpen, setAdminOpen] = useState(false);
 
   // Arrow-key navigation across the prototype list.
@@ -78,7 +78,7 @@ export default function App() {
   }, [version]);
 
   return (
-    <div className={"h-full flex bg-white" + (version === "v34" || version === "v35" || version === "v36" || version === "v37" || version === "v38" || version === "v39" || version === "v40" ? " typefix" : "")}>
+    <div className={"h-full flex bg-white" + (version === "v34" || version === "v35" || version === "v36" || version === "v37" || version === "v38" || version === "v39" || version === "v40" || version === "v41" ? " typefix" : "")}>
       <Sidebar
         version={version}
         onVersionChange={setVersion}
@@ -87,13 +87,13 @@ export default function App() {
       />
       <main className="flex-1 min-w-0 flex flex-col overflow-y-auto">
         {adminOpen ? (
-          <Admin typefix={version === "v34" || version === "v35" || version === "v36" || version === "v37" || version === "v38" || version === "v39" || version === "v40"} />
+          <Admin typefix={version === "v34" || version === "v35" || version === "v36" || version === "v37" || version === "v38" || version === "v39" || version === "v40" || version === "v41"} />
         ) : version === "v1" ? (
           <DockManagementV1 />
         ) : version === "v2" ? (
           <DockManagementV2 />
         ) : (
-          <DockManagementV3 treatment={versionToTreatment(version)} typefix={version === "v34" || version === "v35" || version === "v36" || version === "v37" || version === "v38" || version === "v39" || version === "v40"} declutter={version === "v35" || version === "v36" || version === "v37" || version === "v38" || version === "v39" || version === "v40"} legendAttached={version === "v36" || version === "v37" || version === "v38"} redLate={version === "v37"} autoReassignLabel={version === "v36" || version === "v37" || version === "v38" || version === "v39" || version === "v40"} prismIcon={version === "v39" || version === "v40"} figmaCard={version === "v40"} />
+          <DockManagementV3 treatment={versionToTreatment(version)} typefix={version === "v34" || version === "v35" || version === "v36" || version === "v37" || version === "v38" || version === "v39" || version === "v40" || version === "v41"} declutter={version === "v35" || version === "v36" || version === "v37" || version === "v38" || version === "v39" || version === "v40" || version === "v41"} legendAttached={version === "v36" || version === "v37" || version === "v38"} redLate={version === "v37"} autoReassignLabel={version === "v36" || version === "v37" || version === "v38" || version === "v39" || version === "v40" || version === "v41"} prismIcon={version === "v39" || version === "v40" || version === "v41"} figmaCard={version === "v40" || version === "v41"} densityToggle={version === "v41"} v41Card={version === "v41"} />
         )}
       </main>
     </div>

@@ -30,6 +30,7 @@ interface Props {
   redLate?: boolean;
   prismIcon?: boolean;
   figmaCard?: boolean;
+  v41Card?: boolean;
 }
 
 const HOLD_TOOLTIP =
@@ -57,6 +58,7 @@ export function AssignmentPanel({
   redLate,
   prismIcon,
   figmaCard,
+  v41Card,
 }: Props) {
   // Per-section visibility: each section appears only when it has items OR a
   // drag is in progress (so the drop affordance shows even for empty sections).
@@ -95,6 +97,7 @@ export function AssignmentPanel({
           redLate={redLate}
           prismIcon={prismIcon}
           figmaCard={figmaCard}
+          v41Card={v41Card}
         />
       )}
       {unassignedVisible && (
@@ -115,6 +118,7 @@ export function AssignmentPanel({
           redLate={redLate}
           prismIcon={prismIcon}
           figmaCard={figmaCard}
+          v41Card={v41Card}
         />
       )}
     </aside>
@@ -138,6 +142,7 @@ function Section({
   redLate,
   prismIcon,
   figmaCard,
+  v41Card,
 }: {
   zone: Zone;
   title: string;
@@ -155,6 +160,7 @@ function Section({
   redLate?: boolean;
   prismIcon?: boolean;
   figmaCard?: boolean;
+  v41Card?: boolean;
 }) {
   // Show the dashed drop affordance when a drag is in progress AND this is not
   // the origin zone. The origin zone keeps showing its list (minus the dragging
@@ -236,7 +242,7 @@ function Section({
         // smoothly slide between slots while the user drags one of them — same
         // technique as the priority-list reorder in DockSettingsModal.
         (() => {
-          const cardHeight = density === "expanded" ? 74 : 32;
+          const cardHeight = density === "expanded" ? (v41Card ? 94 : 74) : 32;
           const rowStride = cardHeight + 8;
           const containerHeight = Math.max(
             cardHeight,
@@ -294,6 +300,7 @@ function Section({
                       redLate={redLate}
                       prismIcon={prismIcon}
                       figmaCard={figmaCard}
+                      v41Card={v41Card}
                     />
                   </div>
                 );
@@ -318,7 +325,7 @@ function Section({
                 key={truck.id}
                 data-panel-truck-id={truck.id}
                 style={{
-                  height: density === "expanded" ? 74 : 32,
+                  height: density === "expanded" ? (v41Card ? 94 : 74) : 32,
                   width,
                 }}
               >
@@ -340,6 +347,7 @@ function Section({
                   redLate={redLate}
                   prismIcon={prismIcon}
                   figmaCard={figmaCard}
+                  v41Card={v41Card}
                 />
               </div>
             );

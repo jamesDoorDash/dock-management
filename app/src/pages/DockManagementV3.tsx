@@ -91,7 +91,9 @@ export function DockManagementV3({
   autoReassignLabel = false,
   prismIcon = false,
   figmaCard = false,
-}: { treatment?: Treatment; typefix?: boolean; declutter?: boolean; legendAttached?: boolean; redLate?: boolean; autoReassignLabel?: boolean; prismIcon?: boolean; figmaCard?: boolean } = {}) {
+  densityToggle = false,
+  v41Card = false,
+}: { treatment?: Treatment; typefix?: boolean; declutter?: boolean; legendAttached?: boolean; redLate?: boolean; autoReassignLabel?: boolean; prismIcon?: boolean; figmaCard?: boolean; densityToggle?: boolean; v41Card?: boolean } = {}) {
   const [dateIso, setDateIso] = useState<string>(TODAY_ISO);
   const [zoom, setZoom] = useState<"compact" | "expanded">("compact");
   const [blockingMode, setBlockingMode] = useState(false);
@@ -769,7 +771,7 @@ export function DockManagementV3({
           ) as HTMLElement | null;
           if (holdEl) {
             const rect = holdEl.getBoundingClientRect();
-            const cardHeight = zoom === "expanded" ? 74 : 32;
+            const cardHeight = zoom === "expanded" ? (v41Card ? 94 : 74) : 32;
             const rowStride = cardHeight + 8;
             const relY = e.clientY - rect.top;
             // Use mid-card crossing as the swap threshold so reorder triggers
@@ -1052,6 +1054,7 @@ export function DockManagementV3({
         onZoomIn={() => setZoom("expanded")}
         onZoomOut={() => setZoom("compact")}
         toggleZoom={figmaCard}
+        densityToggle={densityToggle}
         blockingMode={blockingMode}
         onEnterBlockingMode={() => setBlockingMode(true)}
         onExitBlockingMode={() => setBlockingMode(false)}
@@ -1164,6 +1167,7 @@ export function DockManagementV3({
         redLate={redLate}
         prismIcon={prismIcon}
         figmaCard={figmaCard}
+        v41Card={v41Card}
         rightOverlay={
           figmaCard ? (
             <AssignmentPanel
@@ -1181,6 +1185,7 @@ export function DockManagementV3({
               redLate={redLate}
               prismIcon={prismIcon}
               figmaCard={figmaCard}
+              v41Card={v41Card}
             />
           ) : null
         }
@@ -1240,7 +1245,7 @@ export function DockManagementV3({
             transform: "rotate(-1deg)",
           }}
         >
-          <TruckCard truck={draggingTruck} variant="scheduled" source={draggingSource} barStatus={draggingBarStatus} treatment={treatment} typefix={typefix} declutter={declutter} redLate={redLate} prismIcon={prismIcon} figmaCard={figmaCard} />
+          <TruckCard truck={draggingTruck} variant="scheduled" source={draggingSource} barStatus={draggingBarStatus} treatment={treatment} typefix={typefix} declutter={declutter} redLate={redLate} prismIcon={prismIcon} figmaCard={figmaCard} v41Card={v41Card} />
         </div>
       )}
 

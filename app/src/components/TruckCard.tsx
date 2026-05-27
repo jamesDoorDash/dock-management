@@ -108,6 +108,9 @@ interface Props {
    *  2px row gap, 14px/20px DD Norms type, status-colored grip icon, info action,
    *  and a drop-shadow on hover. */
   figmaCard?: boolean;
+  /** V41: taller 4-row card layout — adds an "Inbound truck・26'" row between
+   *  the status line and the cargo line, bringing the card from 74→94px. */
+  v41Card?: boolean;
   /** V35: color status derived from the card's bar position vs the current-time line
    *  (departed = entirely past, in_progress = crossing now, scheduled = entirely future). */
   barStatus?: "scheduled" | "in_progress" | "departed";
@@ -457,6 +460,7 @@ export function TruckCard({
   redLate = false,
   prismIcon = false,
   figmaCard = false,
+  v41Card = false,
   barStatus,
 }: Props) {
   const lateColor = redLate ? "#B71000" : "#111318";
@@ -617,7 +621,25 @@ export function TruckCard({
           )}
         </div>
 
-        {/* Trailer row */}
+        {/* V41: direction + trailer size row. */}
+        {v41Card && (
+          <div
+            className="pl-5 truncate min-w-0"
+            style={{
+              color: TEXT_SUBDUED,
+              fontFamily: "var(--font-dd-norms, 'DD Norms', system-ui, sans-serif)",
+              fontSize: 14,
+              lineHeight: "20px",
+              fontWeight: 500,
+              letterSpacing: "-0.01px",
+            }}
+          >
+            {truck.direction === "inbound" ? "Inbound truck" : "Outbound truck"}
+            {truck.trailerSize ? "・" + truck.trailerSize.replace(" ft", "'") : ""}
+          </div>
+        )}
+
+        {/* Trailer / cargo row */}
         <div
           className="pl-5 truncate min-w-0"
           style={{
@@ -629,9 +651,18 @@ export function TruckCard({
             letterSpacing: "-0.01px",
           }}
         >
-          {formatTrailer(truck.trailerSize, truck.parcelCount)}
-          {"・"}
-          {truck.loadType === "floor" ? "Floor loaded" : "Palletized"}
+          {v41Card ? (
+            <>
+              {truck.parcelCount !== undefined && `${truck.parcelCount.toLocaleString()} parcels・`}
+              {truck.loadType === "floor" ? "Floor loaded" : "Palletized"}
+            </>
+          ) : (
+            <>
+              {formatTrailer(truck.trailerSize, truck.parcelCount)}
+              {"・"}
+              {truck.loadType === "floor" ? "Floor loaded" : "Palletized"}
+            </>
+          )}
         </div>
       </div>
     );
