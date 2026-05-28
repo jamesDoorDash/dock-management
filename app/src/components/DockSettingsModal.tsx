@@ -370,7 +370,7 @@ function dockMenuSections({
         {
           id: "rearrange-position",
           label: "Rearrange dock position",
-          icon: <PrismMenu24 className="size-5 text-ink" />,
+          icon: <PrismList24 className="size-5 text-ink" />,
           onSelect: onRearrangePosition,
         },
         {
@@ -602,7 +602,7 @@ const onSortClick = (next: "position" | "priority") => {
       </div>
 
       {mode !== "list" ? (
-        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden mt-2 -mx-2 px-2">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden mt-2 -mx-2 px-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         <div className={cn("flex gap-3", addingDock && "opacity-40 pointer-events-none")}>
         <div
           className="flex flex-col shrink-0"
@@ -653,8 +653,8 @@ const onSortClick = (next: "position" | "priority") => {
                   zIndex: isDragging ? 20 : 1,
                 }}
                 className={cn(
-                  "absolute inset-x-0 h-12 flex items-center gap-4 px-4 rounded-card border bg-white select-none cursor-grab active:cursor-grabbing touch-none",
-                  isDragging ? "border-ink shadow-drag" : "border-line",
+                  "absolute inset-x-0 h-12 flex items-center gap-4 px-4 rounded-card bg-white select-none cursor-grab active:cursor-grabbing touch-none",
+                  isDragging ? "border-2 border-ink shadow-drag" : "border border-line",
                 )}
               >
                 <SixDotGrip className="size-4 text-icon-subdued" />
@@ -672,64 +672,6 @@ const onSortClick = (next: "position" | "priority") => {
         </div>
       ) : (
         <>
-        {isRenaming ? (
-          <div className="mt-2 flex-1 min-h-0 rounded-card border border-line-hovered overflow-hidden bg-white">
-          <div className="h-full overflow-y-auto">
-            {docks.map((d, idx) => {
-              const rowRenaming = renamingId === d.id;
-              const dimmed = !rowRenaming;
-              return (
-                <div
-                  key={d.id}
-                  className={cn(
-                    "flex items-center gap-2 px-4 h-14",
-                    idx !== docks.length - 1 && "border-b border-line",
-                    dimmed && "opacity-40 pointer-events-none",
-                  )}
-                >
-                  {rowRenaming ? (
-                    <>
-                      <input
-                        autoFocus
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") commitRename();
-                          if (e.key === "Escape") cancelRename();
-                        }}
-                        className="h-10 px-3 rounded-button border border-line-strong bg-white text-body-md-strong text-ink w-40 focus:outline-none focus:border-ink"
-                      />
-                      <button
-                        type="button"
-                        onClick={cancelRename}
-                        className="h-10 px-4 rounded-button border border-line-strong bg-white text-body-md-strong text-ink hover:bg-surface-hovered"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={commitRename}
-                        disabled={!renameValue.trim()}
-                        className={cn(
-                          "h-10 px-4 rounded-button text-body-md-strong",
-                          renameValue.trim()
-                            ? "bg-ink text-white hover:opacity-90"
-                            : "bg-surface-strong text-icon-disabled cursor-not-allowed",
-                        )}
-                      >
-                        Save
-                      </button>
-                    </>
-                  ) : (
-                    <span className="text-body-md-strong text-ink">{d.label}</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          </div>
-        ) : (
-        <>
         {/* Static header strip — stays put while body scrolls */}
         <div
           className={cn(
@@ -739,47 +681,61 @@ const onSortClick = (next: "position" | "priority") => {
         >
           <table className="w-full table-fixed border-separate border-spacing-0">
             <colgroup>
-              <col />
-              <col />
-              <col />
-              <col />
-              <col />
-              <col />
+              {isRenaming ? (
+                <col />
+              ) : (
+                <>
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                </>
+              )}
             </colgroup>
             <thead>
               <tr>
-                <th className="border-b border-line px-3 pl-4 py-3 text-left text-body-sm-strong text-ink">
-                  <HeaderLabel label="Active" tooltip="Toggle to take this dock out of service. Inactive docks won't accept new truck assignments." />
-                </th>
-                <th
-                  className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink cursor-pointer select-none"
-                  onClick={() => onSortClick("position")}
-                >
-                  <SortableHeaderLabel
-                    label="Dock position"
-                    tooltip="Arrangement of docks which should match how docks are arranged in the facility."
-                    active={sortBy === "position"}
-                    dir={sortDir}
-                  />
-                </th>
-                <th
-                  className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink cursor-pointer select-none"
-                  onClick={() => onSortClick("priority")}
-                >
-                  <SortableHeaderLabel
-                    label="Dock priority"
-                    tooltip="Order in which trucks are automatically assigned to dock doors. 1 is the highest priority, 2 is the second, and so on."
-                    active={sortBy === "priority"}
-                    dir={sortDir}
-                  />
-                </th>
-                <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink">
-                  <HeaderLabel label="Dock ID" tooltip="Unique identifier for this dock." />
-                </th>
-                <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink whitespace-nowrap">
-                  <HeaderLabel label="Equipment eligibility" tooltip="Equipment types this dock can't accept. Trucks with ineligible equipment types won't be auto-assigned." />
-                </th>
-                <th className="border-b border-line px-3 pr-4 py-3 text-right text-body-sm-strong text-ink">Actions</th>
+                {isRenaming ? (
+                  <th className="border-b border-line px-4 py-3 text-left text-body-sm-strong text-ink">
+                    Dock name
+                  </th>
+                ) : (
+                  <>
+                    <th className="border-b border-line px-3 pl-4 py-3 text-left text-body-sm-strong text-ink">
+                      <HeaderLabel label="Active" tooltip="Toggle to take this dock out of service. Inactive docks won't accept new truck assignments." />
+                    </th>
+                    <th
+                      className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink cursor-pointer select-none"
+                      onClick={() => onSortClick("position")}
+                    >
+                      <SortableHeaderLabel
+                        label="Dock position"
+                        tooltip="Arrangement of docks which should match how docks are arranged in the facility."
+                        active={sortBy === "position"}
+                        dir={sortDir}
+                      />
+                    </th>
+                    <th
+                      className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink cursor-pointer select-none"
+                      onClick={() => onSortClick("priority")}
+                    >
+                      <SortableHeaderLabel
+                        label="Dock priority"
+                        tooltip="Ranking that determines which dock doors are filled first when trucks are auto-assigned."
+                        active={sortBy === "priority"}
+                        dir={sortDir}
+                      />
+                    </th>
+                    <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink">
+                      <HeaderLabel label="Dock ID" tooltip="Unique identifier for this dock." />
+                    </th>
+                    <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink whitespace-nowrap">
+                      <HeaderLabel label="Equipment eligibility" tooltip="Equipment types this dock can't accept. Trucks with ineligible equipment types won't be auto-assigned." />
+                    </th>
+                    <th className="border-b border-line px-3 pr-4 py-3 text-right text-body-sm-strong text-ink">Actions</th>
+                  </>
+                )}
               </tr>
             </thead>
           </table>
@@ -796,12 +752,18 @@ const onSortClick = (next: "position" | "priority") => {
           >
             <table className="w-full table-fixed border-separate border-spacing-0">
               <colgroup>
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
+                {isRenaming ? (
+                  <col />
+                ) : (
+                  <>
+                    <col />
+                    <col />
+                    <col />
+                    <col />
+                    <col />
+                    <col />
+                  </>
+                )}
               </colgroup>
               <tbody>
                 {sortedDocks.map((d, idx) => (
@@ -810,9 +772,10 @@ const onSortClick = (next: "position" | "priority") => {
                     dock={d}
                     priority={priorityLabel(priorityOrder.indexOf(d.id))}
                     isLast={idx === sortedDocks.length - 1}
-                    isRenaming={false}
-                    hideExtraColumns={false}
-                    dimmed={false}
+                    isRenaming={renamingId === d.id}
+                    hideExtraColumns={isRenaming}
+                    nameOnly={isRenaming}
+                    dimmed={isRenaming && renamingId !== d.id}
                     renameValue={renameValue}
                     setRenameValue={setRenameValue}
                     commitRename={commitRename}
@@ -824,7 +787,7 @@ const onSortClick = (next: "position" | "priority") => {
               </tbody>
             </table>
           </div>
-          {addingDock ? (
+          {isRenaming ? null : addingDock ? (
             <div className="mt-3 flex items-center gap-2">
               <span className="text-body-md-strong text-ink mr-1">Dock</span>
               <input
@@ -874,15 +837,21 @@ const onSortClick = (next: "position" | "priority") => {
           )}
         </div>
         </>
-        )}
-        </>
       )}
     </div>
   );
 }
 
 function priorityLabel(idx: number): string {
-  return String(idx + 1);
+  const n = idx + 1;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
 }
 
 function HeaderLabel({ label, tooltip }: { label: string; tooltip: string }) {
@@ -932,6 +901,7 @@ function ManageDockRow({
   isLast,
   isRenaming,
   hideExtraColumns,
+  nameOnly,
   dimmed,
   renameValue,
   setRenameValue,
@@ -945,6 +915,7 @@ function ManageDockRow({
   isLast: boolean;
   isRenaming: boolean;
   hideExtraColumns: boolean;
+  nameOnly?: boolean;
   dimmed: boolean;
   renameValue: string;
   setRenameValue: (v: string) => void;
@@ -962,21 +933,49 @@ function ManageDockRow({
   const tdBase = "px-3 py-3 text-body-md text-ink align-middle";
   return (
     <tr className={cn("select-none", dimmed && "opacity-40 pointer-events-none")}>
-      <td className={cn(tdBase, tdBorder)}>
-        <Switch checked={dock.active} onChange={onToggle} />
-      </td>
-      <td className={cn(tdBase, tdBorder)}>
+      {!nameOnly && (
+        <td className={cn(tdBase, tdBorder)}>
+          <Switch checked={dock.active} onChange={onToggle} />
+        </td>
+      )}
+      <td className={cn(tdBase, tdBorder, nameOnly && "pl-4")}>
         {isRenaming ? (
-          <input
-            autoFocus
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commitRename();
-              if (e.key === "Escape") cancelRename();
-            }}
-            className="h-10 px-3 rounded-button border border-line-strong bg-white text-body-md-strong text-ink w-40 focus:outline-none focus:border-ink"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitRename();
+                if (e.key === "Escape") cancelRename();
+              }}
+              className="h-10 px-3 rounded-button border border-line-strong bg-white text-body-md-strong text-ink w-40 focus:outline-none focus:border-ink"
+            />
+            {nameOnly && (
+              <>
+                <button
+                  type="button"
+                  onClick={cancelRename}
+                  className="h-10 px-4 rounded-button border border-line-strong bg-white text-body-md-strong text-ink hover:bg-surface-hovered"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={commitRename}
+                  disabled={!renameValue.trim()}
+                  className={cn(
+                    "h-10 px-4 rounded-button text-body-md-strong",
+                    renameValue.trim()
+                      ? "bg-ink text-white hover:opacity-90"
+                      : "bg-surface-strong text-icon-disabled cursor-not-allowed",
+                  )}
+                >
+                  Save
+                </button>
+              </>
+            )}
+          </div>
         ) : (
           <span className="text-body-md-strong text-ink">{dock.label}</span>
         )}
@@ -1233,8 +1232,8 @@ function DockPriorityTab({
                   zIndex: isDragging ? 20 : 1,
                 }}
                 className={cn(
-                  "absolute inset-x-0 h-12 flex items-center gap-4 px-4 rounded-card border bg-white select-none cursor-grab active:cursor-grabbing touch-none",
-                  isDragging ? "border-ink shadow-drag" : "border-line",
+                  "absolute inset-x-0 h-12 flex items-center gap-4 px-4 rounded-card bg-white select-none cursor-grab active:cursor-grabbing touch-none",
+                  isDragging ? "border-2 border-ink shadow-drag" : "border border-line",
                 )}
               >
                 <SixDotGrip className="size-4 text-icon-subdued" />
@@ -1257,14 +1256,18 @@ function PrismPlus16({ className }: { className?: string }) {
   );
 }
 
-/** Prism 24/menu icon — three horizontal lines (hamburger). Path from Figma node 124:99223. */
-function PrismMenu24({ className }: { className?: string }) {
+/** Prism 24/list icon — bulleted list (3 rows, dot + line). Paths from Figma node 124:99221 (24/list). */
+function PrismList24({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
-      <path
-        transform="translate(2 5)"
-        d="M19 12C19.5522 12 19.9999 12.4478 20 13C20 13.5523 19.5523 14 19 14H1C0.447715 14 0 13.5523 0 13C6.59659e-05 12.4478 0.447756 12 1 12H19ZM19 6C19.5522 6 19.9999 6.44777 20 7C20 7.55228 19.5523 8 19 8H1C0.447715 8 0 7.55228 0 7C6.59659e-05 6.44777 0.447756 6 1 6H19ZM19 0C19.5523 0 20 0.447715 20 1C20 1.55228 19.5523 2 19 2H1C0.447715 2 0 1.55228 0 1C0 0.447715 0.447715 0 1 0H19Z"
-      />
+      <g transform="translate(2.5 4.5)">
+        <path d="M1.5 12C2.32843 12 3 12.6716 3 13.5C2.99993 14.3284 2.32839 15 1.5 15C0.671726 14.9999 6.59509e-05 14.3283 0 13.5C0 12.6717 0.671685 12.0001 1.5 12Z" />
+        <path d="M18.5 12.5C19.0523 12.5 19.5 12.9477 19.5 13.5C19.5 14.0523 19.0523 14.5 18.5 14.5H6.5C5.94783 14.4999 5.5 14.0522 5.5 13.5C5.5 12.9478 5.94783 12.5001 6.5 12.5H18.5Z" />
+        <path d="M1.5 6C2.32843 6 3 6.67157 3 7.5C2.99993 8.32837 2.32839 9 1.5 9C0.671726 8.99987 6.59509e-05 8.32829 0 7.5C0 6.67165 0.671685 6.00013 1.5 6Z" />
+        <path d="M18.5 6.5C19.0523 6.5 19.5 6.94772 19.5 7.5C19.5 8.05228 19.0523 8.5 18.5 8.5H6.5C5.94783 8.49987 5.5 8.0522 5.5 7.5C5.5 6.9478 5.94783 6.50013 6.5 6.5H18.5Z" />
+        <path d="M1.5 0C2.32843 0 3 0.671573 3 1.5C2.99993 2.32837 2.32839 3 1.5 3C0.671726 2.99987 6.59509e-05 2.32829 0 1.5C0 0.671654 0.671685 0.000131938 1.5 0Z" />
+        <path d="M18.5 0.5C19.0523 0.5 19.5 0.947715 19.5 1.5C19.4999 2.05223 19.0522 2.5 18.5 2.5H6.5C5.94787 2.49987 5.50007 2.05215 5.5 1.5C5.5 0.947797 5.94783 0.500132 6.5 0.5H18.5Z" />
+      </g>
     </svg>
   );
 }

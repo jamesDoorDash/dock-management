@@ -136,24 +136,27 @@ export function PopoverMenu({ open, anchorRect, items, sections, onClose }: Prop
                     : "text-ink hover:bg-surface-hovered",
                 )}
               >
-                {item.icon}
-                <span className="flex-1 min-w-0 truncate">{item.label}</span>
-                {isSwitch && (
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "relative w-9 h-5 rounded-tag transition-colors shrink-0",
-                      item.checked ? "bg-ink" : "bg-line-strong",
-                    )}
-                  >
+                <span className="w-9 shrink-0 flex items-center justify-center">
+                  {isSwitch ? (
                     <span
+                      aria-hidden
                       className={cn(
-                        "absolute top-0.5 size-4 rounded-full bg-white transition-all",
-                        item.checked ? "left-[18px]" : "left-0.5",
+                        "relative w-9 h-5 rounded-tag transition-colors shrink-0",
+                        item.checked ? "bg-ink" : "bg-line-strong",
                       )}
-                    />
-                  </span>
-                )}
+                    >
+                      <span
+                        className={cn(
+                          "absolute top-0.5 size-4 rounded-full bg-white transition-all",
+                          item.checked ? "left-[18px]" : "left-0.5",
+                        )}
+                      />
+                    </span>
+                  ) : (
+                    item.icon
+                  )}
+                </span>
+                <span className="flex-1 min-w-0 truncate">{item.label}</span>
               </button>
             );
           })}

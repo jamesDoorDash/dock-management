@@ -325,8 +325,12 @@ export function DockManagementV2() {
           ])
         }
         onDeleteBlock={(blockId) => setBlocked((prev) => prev.filter((b) => b.id !== blockId))}
-        onMoveBlock={(blockId, newStartMinutes) =>
-          setBlocked((prev) => prev.map((b) => (b.id === blockId ? { ...b, startMinutes: newStartMinutes } : b)))
+        onMoveBlock={(blockId, newStartMinutes, newDockId) =>
+          setBlocked((prev) =>
+            prev.map((b) =>
+              b.id === blockId ? { ...b, startMinutes: newStartMinutes, dockId: newDockId } : b,
+            ),
+          )
         }
         onResizeBlock={(blockId, newDurationMinutes) =>
           setBlocked((prev) => prev.map((b) => (b.id === blockId ? { ...b, durationMinutes: newDurationMinutes } : b)))

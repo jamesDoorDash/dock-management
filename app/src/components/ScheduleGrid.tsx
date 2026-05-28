@@ -108,8 +108,8 @@ interface Props {
   onCreateBlock?: (draft: { dockId: string; startMinutes: number; durationMinutes: number }) => void;
   /** Called when the trash button on a blocked slot is clicked. */
   onDeleteBlock?: (blockId: string) => void;
-  /** Called when a blocked slot is dragged to a new start time (blocking mode only). */
-  onMoveBlock?: (blockId: string, newStartMinutes: number) => void;
+  /** Called when a blocked slot is dragged to a new start time and/or dock row. */
+  onMoveBlock?: (blockId: string, newStartMinutes: number, newDockId: string) => void;
   /** Called when a blocked slot is resized via the right edge (blocking mode only). */
   onResizeBlock?: (blockId: string, newDurationMinutes: number) => void;
   /** When true, only block-time creation is allowed; trucks are inert. */
@@ -440,6 +440,10 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
     blockId: string;
     origStart: number;
     origDuration: number;
+    origDockId: string;
+    // Live target dock while moving — lets a block be dragged to another row,
+    // just like trucks.
+    dockId: string;
     pointerStartX: number;
     deltaMinutes: number;
   } | null>(null);
@@ -452,6 +456,8 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
       blockId,
       origStart: b.startMinutes,
       origDuration: b.durationMinutes,
+      origDockId: b.dockId,
+      dockId: b.dockId,
       pointerStartX: e.clientX,
       deltaMinutes: 0,
     });
@@ -466,6 +472,8 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
       blockId,
       origStart: b.startMinutes,
       origDuration: b.durationMinutes,
+      origDockId: b.dockId,
+      dockId: b.dockId,
       pointerStartX: e.clientX,
       deltaMinutes: 0,
     });
@@ -478,19 +486,27 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
       const dx = e.clientX - blockInteraction.pointerStartX;
       // Snap delta to 15-min increments
       const deltaMin = Math.round((dx / HOUR_WIDTH) * 60 / 15) * 15;
-      setBlockInteraction((b) => (b ? { ...b, deltaMinutes: deltaMin } : b));
+      // While moving, also follow the pointer vertically so the block can be
+      // dropped onto another dock row (resize stays within its row).
+      const overDock = blockInteraction.kind === "move" ? dockAtY(e.clientY) : null;
+      setBlockInteraction((b) =>
+        b ? { ...b, deltaMinutes: deltaMin, dockId: overDock ?? b.dockId } : b,
+      );
     };
     const onUp = () => {
       const b = blockInteraction;
       setBlockInteraction(null);
-      if (!b || b.deltaMinutes === 0) return;
+      if (!b) return;
       if (b.kind === "move") {
+        const movedRow = b.dockId !== b.origDockId;
+        if (b.deltaMinutes === 0 && !movedRow) return;
         const newStart = Math.max(
           SCHEDULE_START_MINUTES,
           Math.min(b.origStart + b.deltaMinutes, SCHEDULE_END_MINUTES - b.origDuration),
         );
-        onMoveBlock?.(b.blockId, newStart);
+        onMoveBlock?.(b.blockId, newStart, b.dockId);
       } else {
+        if (b.deltaMinutes === 0) return;
         const newDuration = Math.max(15, b.origDuration + b.deltaMinutes);
         onResizeBlock?.(b.blockId, newDuration);
       }
@@ -978,9 +994,14 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
 
                 {/* Blocked slots */}
                 {blocked.map((b) => {
-                  const dockIdx = docks.findIndex((d) => d.id === b.dockId);
+                  // Live-preview the move/resize while interacting — including
+                  // following the pointer to another dock row during a move.
+                  const liveDockId =
+                    blockInteraction && blockInteraction.blockId === b.id
+                      ? blockInteraction.dockId
+                      : b.dockId;
+                  const dockIdx = docks.findIndex((d) => d.id === liveDockId);
                   if (dockIdx < 0) return null;
-                  // Live-preview the move/resize while interacting
                   let liveStart = b.startMinutes;
                   let liveDuration = b.durationMinutes;
                   if (blockInteraction && blockInteraction.blockId === b.id) {
@@ -1123,9 +1144,24 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                     : isPastDate
                       ? "departed"
                       : "scheduled";
-                  const left =
+                  let left =
                     ((bar.startMin - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH + m.shiftX;
-                  const width = (bar.widthMin / 60) * HOUR_WIDTH;
+                  let width = (bar.widthMin / 60) * HOUR_WIDTH;
+                  // The current-time line is a 2px div centered on its time (so it
+                  // occupies [x-1, x+1]). When a bar's edge lands exactly on the
+                  // line — an overdue nose resting on it, or an overrun tail
+                  // sticking to it — the default geometry overlaps the line's
+                  // inner pixel. Nudge the bar by the line's 1px half-width so it
+                  // rests flush against the line instead of grinding over it.
+                  const NOW_LINE_HALF = 1;
+                  if (showCurrentTime && m.shiftX === 0) {
+                    if (bar.startMin === CURRENT_TIME_MINUTES) {
+                      left += NOW_LINE_HALF;
+                      width -= NOW_LINE_HALF;
+                    } else if (barEnd === CURRENT_TIME_MINUTES) {
+                      width -= NOW_LINE_HALF;
+                    }
+                  }
                   const v = variantByTruckId?.(a.truckId) ?? "scheduled";
                   const source = departed
                     ? "departed"

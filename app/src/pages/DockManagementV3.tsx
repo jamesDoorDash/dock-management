@@ -47,7 +47,7 @@ import { ErrorModal } from "../components/ErrorModal";
 import { BLOCKED_SLOTS, CURRENT_TIME_MINUTES, DOCKS, FACILITY, TODAY_ISO, TRUCKS, setCurrentTimeMinutes } from "../data/mock";
 import type { Assignment, BlockedSlot, Dock, Truck } from "../data/types";
 import { autoAssignAll } from "../lib/autoAssign";
-import { getBarRange, synthLateMinutes, synthStayOvertimeMinutes, setHmOvertimeOverride, setAllpackOvertimeOverride } from "../lib/time";
+import { getBarRange, synthLateMinutes, synthStayOvertimeMinutes, synthOverrunMinutes, setHmOvertimeOverride, setAllpackOvertimeOverride } from "../lib/time";
 import { cn } from "../lib/cn";
 
 type DragState =
@@ -151,10 +151,36 @@ export function DockManagementV3({
   const [demoCollisionModalOpen, setDemoCollisionModalOpen] = useState(false);
   // null = no choice yet, "confirm" = displaced, "cancel" = left overlapping.
   const [demoCollisionChoice, setDemoCollisionChoice] = useState<null | "confirm" | "cancel">(null);
+  // V41 time-scrubber demo: `>` steps +15min, `<` steps -15min, space resets
+  // to 10:30 AM (all trucks grey, no bar touching the current-time line yet).
+  // null = scrubber inactive (W/E demo or canonical 14:15 takes over).
+  // Clamped to [10:30 AM, 3:00 AM next day].
+  const SCRUB_MIN = 10 * 60 + 30;
+  const SCRUB_MAX = 27 * 60; // 3:00 AM next day
+  const SCRUB_STEP = 15;
+  const SCRUB_RESET = 10 * 60 + 30;
+  const [scrubMinutes, setScrubMinutes] = useState<number | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      if (e.key === ">" || e.key === ".") {
+        setScrubMinutes((s) =>
+          Math.min(SCRUB_MAX, (s ?? SCRUB_RESET) + SCRUB_STEP),
+        );
+        return;
+      }
+      if (e.key === "<" || e.key === ",") {
+        setScrubMinutes((s) =>
+          Math.max(SCRUB_MIN, (s ?? SCRUB_RESET) - SCRUB_STEP),
+        );
+        return;
+      }
+      if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        setScrubMinutes(SCRUB_RESET);
+        return;
+      }
       if (e.key === "w" || e.key === "W") setDemoStep((s) => s + 1);
       else if (e.key === "e" || e.key === "E") setDemoStepE((s) => s + 1);
       else if (v41Card && (e.key === "h" || e.key === "H")) {
@@ -178,18 +204,21 @@ export function DockManagementV3({
   // letting the W flow reach a step-5 collision modal.
   const effectiveStep = Math.max(demoStep, demoStepE);
   // Apply during render so dependent reads of CURRENT_TIME_MINUTES see the new value this pass.
+  // Scrubber (>, <, space) overrides the W/E demoStep time when active.
   setCurrentTimeMinutes(
-    effectiveStep >= 6
-      ? 15 * 60 + 30
-      : effectiveStep >= 5
-        ? 15 * 60 + 25
-        : effectiveStep >= 4
-          ? 15 * 60 + 20
-          : effectiveStep >= 3
-            ? 15 * 60 + 15
-            : effectiveStep >= 2
-              ? 14 * 60 + 50
-              : 14 * 60 + 15,
+    scrubMinutes !== null
+      ? scrubMinutes
+      : effectiveStep >= 6
+        ? 15 * 60 + 30
+        : effectiveStep >= 5
+          ? 15 * 60 + 25
+          : effectiveStep >= 4
+            ? 15 * 60 + 20
+            : effectiveStep >= 3
+              ? 15 * 60 + 15
+              : effectiveStep >= 2
+                ? 14 * 60 + 50
+                : 14 * 60 + 15,
   );
   // HM grows ~10% past its appointment starting at frame 2 (overtime while
   // it's still checked in), and stays that wider size through frame 3.
@@ -348,7 +377,7 @@ export function DockManagementV3({
       const arrivalDelay = synthLateMinutes(truckId);
       const stayOvertime = synthStayOvertimeMinutes(truckId);
       const actualArrival = start + arrivalDelay;
-      const actualDepart = actualArrival + t.durationMinutes + stayOvertime;
+      const actualDepart = actualArrival + Math.max(t.durationMinutes + stayOvertime, 10) + synthOverrunMinutes(truckId);
       // Strict less-than on arrival: a truck whose actualArrival is exactly the
       // current time line (e.g. allpack at frame 0) hasn't *actually* arrived
       // yet — it's still scheduled/overdue and remains movable.
@@ -387,7 +416,10 @@ export function DockManagementV3({
     (truckId: string) => {
       const t = trucksById[truckId];
       if (!t) return false;
-      if (t.status === "departed") return true;
+      // Note: we intentionally do NOT shortcut on t.status === "departed" — the
+      // time-scrubber demo (>, <, space) rewinds CURRENT_TIME_MINUTES below a
+      // truck's appt time, at which point the truck must be treated as still
+      // scheduled regardless of its mocked status field.
       if (t.dateIso < TODAY_ISO) return true;
       if (t.dateIso === TODAY_ISO) {
         const a = assignments.find((x) => x.truckId === truckId);
@@ -397,7 +429,7 @@ export function DockManagementV3({
         // its scheduled slot would be misclassified as departed and its bar
         // would visually cross the current-time line.
         const actualDepart =
-          start + synthLateMinutes(truckId) + t.durationMinutes + synthStayOvertimeMinutes(truckId);
+          start + synthLateMinutes(truckId) + Math.max(t.durationMinutes + synthStayOvertimeMinutes(truckId), 10) + synthOverrunMinutes(truckId);
         return actualDepart <= CURRENT_TIME_MINUTES;
       }
       return false;
@@ -1157,8 +1189,12 @@ export function DockManagementV3({
           ]);
         }}
         onDeleteBlock={(blockId) => setBlocked((prev) => prev.filter((b) => b.id !== blockId))}
-        onMoveBlock={(blockId, newStartMinutes) =>
-          setBlocked((prev) => prev.map((b) => (b.id === blockId ? { ...b, startMinutes: newStartMinutes } : b)))
+        onMoveBlock={(blockId, newStartMinutes, newDockId) =>
+          setBlocked((prev) =>
+            prev.map((b) =>
+              b.id === blockId ? { ...b, startMinutes: newStartMinutes, dockId: newDockId } : b,
+            ),
+          )
         }
         onResizeBlock={(blockId, newDurationMinutes) =>
           setBlocked((prev) => prev.map((b) => (b.id === blockId ? { ...b, durationMinutes: newDurationMinutes } : b)))
