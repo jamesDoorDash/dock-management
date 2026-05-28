@@ -44,7 +44,7 @@ function mockUuid(seed: number): string {
   return `${block(8, 0)}-${block(4, 8)}-${block(4, 12)}-${block(4, 16)}-${block(12, 20)}`;
 }
 
-export const DOCKS: Dock[] = Array.from({ length: 15 }, (_, i) => ({
+export const DOCKS: Dock[] = Array.from({ length: 33 }, (_, i) => ({
   id: `dock-${i + 1}`,
   label: `Dock ${i + 1}`,
   uuid: mockUuid(i + 1),
