@@ -1260,7 +1260,7 @@ export function DockManagementV3({
                 draggingTruck.apptMinutes < CURRENT_TIME_MINUTES &&
                 !isTruckInProgress(draggingTruck.id)
                   ? "Assign a dock for this late truck"
-                  : "Assign a dock for this truck's appointment time"}
+                  : "Assign a dock for this truck at its appointment time"}
               </p>
             ) : (
               declutter ? (
