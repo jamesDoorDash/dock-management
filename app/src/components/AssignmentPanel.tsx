@@ -33,8 +33,10 @@ interface Props {
   v41Card?: boolean;
 }
 
-const HOLD_TOOLTIP =
+const HOLD_TOOLTIP_V40 =
   "A place to que up trucks when dock doors are full. Drag to rearrange.";
+const HOLD_TOOLTIP_V41 =
+  "Trucks that have been checked in but are still awaiting dock door assignment.";
 const UNASSIGNED_TOOLTIP =
   "Trucks that haven't been assigned a dock door yet. Ordered by appointment time.";
 
@@ -63,7 +65,12 @@ export function AssignmentPanel({
   // Per-section visibility: each section appears only when it has items OR a
   // drag is in progress (so the drop affordance shows even for empty sections).
   // The panel itself is hidden when both sections are hidden.
-  const holdVisible = isDragging || holdTrucks.length > 0;
+  // V41: web can no longer add trucks to On hold (that flow lives on mobile),
+  // so the hold section is purely a read-out — it appears only when it has
+  // items, never as a drop affordance during drag.
+  const holdVisible = v41Card
+    ? holdTrucks.length > 0
+    : isDragging || holdTrucks.length > 0;
   const unassignedVisible = isDragging || unassignedTrucks.length > 0;
   if (!holdVisible && !unassignedVisible) return null;
 
@@ -83,7 +90,7 @@ export function AssignmentPanel({
         <Section
           zone="hold"
           title="On hold"
-          tooltip={HOLD_TOOLTIP}
+          tooltip={v41Card ? HOLD_TOOLTIP_V41 : HOLD_TOOLTIP_V40}
           trucks={holdTrucks}
           density={density}
           isDragging={isDragging}
@@ -165,8 +172,20 @@ function Section({
   // Show the dashed drop affordance when a drag is in progress AND this is not
   // the origin zone. The origin zone keeps showing its list (minus the dragging
   // card) so the user can drop back where they started without confusion.
-  const showDropAffordance = isDragging && draggingFromZone !== zone;
-  const visibleTrucks = trucks.filter((t) => t.id !== draggingTruckId);
+  // V41: never show the "Add to on hold" drop affordance — web can't add to
+  // hold; only the hold list itself (rearrange within) is interactive.
+  const showDropAffordance =
+    isDragging &&
+    draggingFromZone !== zone &&
+    !(v41Card && zone === "hold");
+  // V41: when dragging from this zone, keep the dragging card's slot visible
+  // (rendered at opacity 0) so the list doesn't visually reflow. This matches
+  // the On hold behavior — the user only sees a reorganized list once they
+  // actually move the card to a different destination.
+  const preserveDraggingSlot = v41Card && draggingFromZone === zone;
+  const visibleTrucks = preserveDraggingSlot
+    ? trucks
+    : trucks.filter((t) => t.id !== draggingTruckId);
 
   return (
     <div className="flex flex-col" style={{ gap: 16 }}>
@@ -327,6 +346,9 @@ function Section({
                 style={{
                   height: density === "expanded" ? (v41Card ? 94 : 74) : 32,
                   width,
+                  // V41: preserve the dragging card's slot by hiding it in
+                  // place instead of removing it from the list.
+                  opacity: preserveDraggingSlot && truck.id === draggingTruckId ? 0 : 1,
                 }}
               >
                 <TruckCard

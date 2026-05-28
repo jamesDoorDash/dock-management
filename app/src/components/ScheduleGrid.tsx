@@ -1,5 +1,13 @@
 import { useRef, useImperativeHandle, forwardRef, useState, useEffect } from "react";
 import { GripVertical } from "lucide-react";
+
+function PrismEditLine16({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M10.5026 1.28548C11.6664 0.121795 13.5528 0.121864 14.7165 1.28548C15.8802 2.4492 15.8802 4.33562 14.7165 5.49934L5.12173 15.094C4.80292 15.4128 4.37046 15.5921 3.91959 15.5921H2.11002C1.17113 15.5921 0.409821 14.8308 0.409821 13.8919V12.0823C0.409821 11.6314 0.589054 11.199 0.907868 10.8802L10.5026 1.28548ZM2.40982 12.2063V13.5921H3.79556L11.195 6.19173L9.80923 4.80599L2.40982 12.2063ZM13.3024 1.69954C12.9197 1.31697 12.2993 1.3169 11.9167 1.69954L11.2233 2.39192L12.609 3.77767L13.3024 3.08528C13.6851 2.70261 13.6851 2.08222 13.3024 1.69954Z" fill="currentColor"/>
+    </svg>
+  );
+}
 import type { Assignment, BlockedSlot, Dock, Truck } from "../data/types";
 import { TruckCard, type Treatment } from "./TruckCard";
 import { CURRENT_TIME_MINUTES, SCHEDULE_START_MINUTES, SCHEDULE_END_MINUTES } from "../data/mock";
@@ -130,6 +138,8 @@ interface Props {
   figmaCard?: boolean;
   /** V41: taller (94px) card layout with inbound/outbound row — also bumps expanded ROW_HEIGHT to fit. */
   v41Card?: boolean;
+  /** V42: show "Docs" + pencil in the dock-label header cell. */
+  docsHeader?: boolean;
   /** Short label for the day after the viewed date (e.g. "May 14"), shown on past-midnight hour headers. */
   nextDayLabel?: string;
   /** Viewed date (ISO). Used as the trigger for auto-scrolling on day change. */
@@ -381,6 +391,7 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
     prismIcon,
     figmaCard,
     v41Card,
+    docsHeader,
     nextDayLabel,
     dateIso,
     holdStartIndex,
@@ -667,6 +678,23 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
   const hours: number[] = [];
   for (let m = SCHEDULE_START_MINUTES; m < SCHEDULE_END_MINUTES; m += 60) hours.push(m);
 
+  // V41: while dragging, compute the appointment-time snap column so the
+  // header time labels and current-time bar can dim when they fall outside it.
+  const v41SnapRange = (() => {
+    if (!v41Card || !draggingTruckId) return null;
+    if (isDepartedTruckId?.(draggingTruckId)) return null;
+    const dragTruck = trucksById[draggingTruckId];
+    if (!dragTruck) return null;
+    const inProgress = isInProgressTruckId?.(draggingTruckId) ?? false;
+    const snapStart = inProgress
+      ? dragLockedStartMinutes ?? dragTruck.apptMinutes
+      : Math.max(dragTruck.apptMinutes, CURRENT_TIME_MINUTES);
+    return { start: snapStart, end: snapStart + dragTruck.durationMinutes };
+  })();
+  const currentTimeOutsideSnap =
+    !!v41SnapRange &&
+    (CURRENT_TIME_MINUTES < v41SnapRange.start || CURRENT_TIME_MINUTES >= v41SnapRange.end);
+
   return (
     <div className="px-10 flex flex-col">
       <div className="relative bg-white flex flex-col border border-line rounded-card overflow-hidden">
@@ -691,17 +719,34 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
               style={{ height: HEADER_HEIGHT }}
             >
               <div
-                className="sticky left-0 z-10 bg-surface-hovered border-r border-b border-line"
+                className="sticky left-0 z-10 bg-surface-hovered border-r border-b border-line flex items-center px-3 gap-1.5"
                 style={{ width: DOCK_COL_WIDTH, minWidth: DOCK_COL_WIDTH }}
-              />
+              >
+                {docsHeader && (
+                  <>
+                    <span className="text-body-sm-strong text-ink">Docks</span>
+                    <PrismEditLine16 className="size-4 text-ink" />
+                  </>
+                )}
+              </div>
               <div
                 className="relative flex border-b border-line"
                 style={{ width: totalWidth }}
               >
-                {hours.map((m) => (
+                {hours.map((m) => {
+                  // V41: dim the hour label when its hour falls entirely
+                  // outside the appointment-time snap column.
+                  const hourEnd = m + 60;
+                  const hourOutsideSnap =
+                    v41SnapRange != null &&
+                    (hourEnd <= v41SnapRange.start || m >= v41SnapRange.end);
+                  return (
                   <div
                     key={m}
-                    className="px-5 flex items-center gap-1.5 text-body-sm-strong text-ink border-r border-line whitespace-nowrap"
+                    className={cn(
+                      "px-5 flex items-center gap-1.5 text-body-sm-strong text-ink border-r border-line whitespace-nowrap",
+                      hourOutsideSnap && "opacity-40",
+                    )}
                     style={{ width: HOUR_WIDTH, minWidth: HOUR_WIDTH }}
                   >
                     <span>{formatTimeShort(m)}</span>
@@ -711,12 +756,16 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                       </span>
                     )}
                   </div>
-                ))}
+                  );
+                })}
                 {showCurrentTime &&
                   CURRENT_TIME_MINUTES >= SCHEDULE_START_MINUTES &&
                   CURRENT_TIME_MINUTES <= SCHEDULE_END_MINUTES && (
                     <div
-                      className="absolute pointer-events-none -translate-x-1/2"
+                      className={cn(
+                        "absolute pointer-events-none -translate-x-1/2",
+                        currentTimeOutsideSnap && "opacity-40",
+                      )}
                       style={{
                         left:
                           ((CURRENT_TIME_MINUTES - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH,
@@ -742,6 +791,30 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                       />
                     </div>
                   )}
+                {/* V41: extend the snap-column shadow wash up over the header
+                    so the time-label row reads as part of the dimmed area too. */}
+                {v41Card && draggingTruckId && !(isDepartedTruckId?.(draggingTruckId) ?? false) && (() => {
+                  const dragTruck = trucksById[draggingTruckId];
+                  if (!dragTruck) return null;
+                  const inProgress = isInProgressTruckId?.(draggingTruckId) ?? false;
+                  const snapStart = inProgress
+                    ? dragLockedStartMinutes ?? dragTruck.apptMinutes
+                    : Math.max(dragTruck.apptMinutes, CURRENT_TIME_MINUTES);
+                  const left = ((snapStart - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH;
+                  const width = (dragTruck.durationMinutes / 60) * HOUR_WIDTH;
+                  return (
+                    <>
+                      <div
+                        className="absolute pointer-events-none"
+                        style={{ top: 0, bottom: -1, left: 0, width: left, background: "rgba(25,25,25,0.12)", zIndex: 5 }}
+                      />
+                      <div
+                        className="absolute pointer-events-none"
+                        style={{ top: 0, bottom: -1, left: left + width, right: 0, background: "rgba(25,25,25,0.12)", zIndex: 5 }}
+                      />
+                    </>
+                  );
+                })()}
                 {/* Appointment-time flag — lives inside the time area so the
                     sticky dock-label column (z-10 in this header) covers it
                     when it bleeds left, instead of painting over dock numbers. */}
@@ -836,6 +909,33 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                   />
                 )}
 
+                {/* V41: shadow strips covering the area outside the snap
+                    column — paired with per-truck opacity-40 (blocked-time
+                    style) for trucks that fall outside it. The combination
+                    reinforces that only the dock-row choice is up to the user. */}
+                {v41Card && draggingTruckId && !(isDepartedTruckId?.(draggingTruckId) ?? false) && (() => {
+                  const dragTruck = trucksById[draggingTruckId];
+                  if (!dragTruck) return null;
+                  const inProgress = isInProgressTruckId?.(draggingTruckId) ?? false;
+                  const snapStart = inProgress
+                    ? dragLockedStartMinutes ?? dragTruck.apptMinutes
+                    : Math.max(dragTruck.apptMinutes, CURRENT_TIME_MINUTES);
+                  const left = ((snapStart - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH;
+                  const width = (dragTruck.durationMinutes / 60) * HOUR_WIDTH;
+                  return (
+                    <>
+                      <div
+                        className="absolute top-0 bottom-0 pointer-events-none"
+                        style={{ left: 0, width: left, background: "rgba(25,25,25,0.12)", zIndex: 49 }}
+                      />
+                      <div
+                        className="absolute top-0 bottom-0 pointer-events-none"
+                        style={{ left: left + width, right: 0, background: "rgba(25,25,25,0.12)", zIndex: 49 }}
+                      />
+                    </>
+                  );
+                })()}
+
                 {/* Appointment-time stick — inside the grid so the sticky dock-label
                     column (a sibling at z-10) covers it instead of painting over dock numbers. */}
                 {draggingTruckId && !(isDepartedTruckId?.(draggingTruckId) ?? false) && (() => {
@@ -863,7 +963,10 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                   CURRENT_TIME_MINUTES >= SCHEDULE_START_MINUTES &&
                   CURRENT_TIME_MINUTES <= SCHEDULE_END_MINUTES && (
                     <div
-                      className="absolute pointer-events-none w-0.5 -translate-x-1/2"
+                      className={cn(
+                        "absolute pointer-events-none w-0.5 -translate-x-1/2",
+                        currentTimeOutsideSnap && "opacity-40",
+                      )}
                       style={{
                         left: ((CURRENT_TIME_MINUTES - SCHEDULE_START_MINUTES) / 60) * HOUR_WIDTH,
                         top: -3, // extend upward so the stem meets the triangle tip with no gap
@@ -962,6 +1065,24 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
 
                 {/* Assigned trucks */}
                 {(() => {
+                  // V41: while dragging, every truck whose bar falls outside
+                  // the appointment-time snap column gets the blocked-time
+                  // dim treatment, so the user reads the column as the only
+                  // valid placement target.
+                  let v41DimRange: { start: number; end: number } | null = null;
+                  if (v41Card && draggingTruckId && !(isDepartedTruckId?.(draggingTruckId) ?? false)) {
+                    const dragTruck = trucksById[draggingTruckId];
+                    if (dragTruck) {
+                      const inProgress = isInProgressTruckId?.(draggingTruckId) ?? false;
+                      const snapStart = inProgress
+                        ? dragLockedStartMinutes ?? dragTruck.apptMinutes
+                        : Math.max(dragTruck.apptMinutes, CURRENT_TIME_MINUTES);
+                      v41DimRange = {
+                        start: snapStart,
+                        end: snapStart + dragTruck.durationMinutes,
+                      };
+                    }
+                  }
                   // Build layering metadata: later start time renders on top.
                   // Ties on the same dock+startMinutes get a small x-shift so both remain visible.
                   const sorted = [...assignments].sort(
@@ -1039,6 +1160,12 @@ export const ScheduleGrid = forwardRef<ScheduleGridHandle, Props>(function Sched
                         blockingMode && "opacity-40 pointer-events-none",
                         draggingTruckId && !isDragging && "pointer-events-none",
                         departed && !isDragging && "cursor-not-allowed",
+                        // V41: dim trucks whose bar sits entirely outside the
+                        // appointment-time snap column.
+                        v41DimRange &&
+                          !isDragging &&
+                          (barEnd <= v41DimRange.start || bar.startMin >= v41DimRange.end) &&
+                          "opacity-40",
                       )}
                       style={{
                         left,

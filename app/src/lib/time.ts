@@ -124,7 +124,7 @@ export function getStatusLine(
   // appt block notionally spans `now`, the visual bar grows toward `now` (see
   // getBarRange) to make the overdue gap obvious; promoting these to "Arrived"
   // would conflict with that.
-  return { primary: `ETA ${formatTime(truck.apptMinutes)}`, late: formatLateness(overdue) };
+  return { primary: `Appt. ${formatTime(truck.apptMinutes)}`, late: formatLateness(overdue) };
 }
 
 /**

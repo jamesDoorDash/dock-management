@@ -1,4 +1,5 @@
 import { useState, useRef, useLayoutEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "../lib/cn";
 
 interface Props {
@@ -55,8 +56,9 @@ export function Tooltip({ label, children, anchor = "center", wide = false }: Pr
       className="relative inline-flex"
     >
       {children}
-      {open &&
-        (anchor === "bottom-right" ? (
+      {open && typeof document !== "undefined" &&
+        createPortal(
+        anchor === "bottom-right" ? (
           triggerRect && (
             <span
               role="tooltip"
@@ -134,7 +136,9 @@ export function Tooltip({ label, children, anchor = "center", wide = false }: Pr
               />
             </span>
           )
-        ))}
+        ),
+        document.body,
+      )}
     </span>
   );
 }

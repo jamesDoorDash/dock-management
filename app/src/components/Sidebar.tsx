@@ -43,10 +43,11 @@ export type PrototypeVersion =
   | "v38"
   | "v39"
   | "v40"
-  | "v41";
+  | "v41"
+  | "v42";
 
 /** Versions promoted to the "Top contenders" shortlist. */
-export const TOP_CONTENDERS: PrototypeVersion[] = ["v40", "v41"];
+export const TOP_CONTENDERS: PrototypeVersion[] = ["v40", "v41" /*, "v42"*/];
 
 export const VERSION_OPTIONS: { id: PrototypeVersion; label: string }[] = [
   { id: "v1", label: "V1: First draft" },
@@ -90,6 +91,7 @@ export const VERSION_OPTIONS: { id: PrototypeVersion; label: string }[] = [
   { id: "v39", label: "V39: Post Crit" },
   { id: "v40", label: "V40: Final iteration" },
   { id: "v41", label: "V41: Craft Fixes" },
+  // { id: "v42", label: "V42: Edit docks 1" }, // disabled — re-enable to restore V42
 ];
 
 interface SidebarProps {
@@ -109,7 +111,7 @@ const NAV_ITEMS = [
 
 export function Sidebar({ version, onVersionChange, adminOpen, onToggleAdmin }: SidebarProps) {
   const [trucksOpen, setTrucksOpen] = useState(true);
-  const nestedTrucks = version === "v39" || version === "v40" || version === "v41";
+  const nestedTrucks = version === "v39" || version === "v40" || version === "v41" || version === "v42";
   return (
     <aside className="w-[256px] shrink-0 border-r border-line bg-surface flex flex-col">
       {/* Brand */}

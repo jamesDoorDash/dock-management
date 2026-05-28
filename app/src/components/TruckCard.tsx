@@ -499,7 +499,14 @@ export function TruckCard({
     const palette = FIGMA_PALETTE[status];
     const TEXT_DEFAULT = "#191919";
     const TEXT_SUBDUED = "#606060";
-    const statusLine = getStatusLine(truck, CURRENT_TIME_MINUTES, source === "departed");
+    const rawStatusLine = getStatusLine(truck, CURRENT_TIME_MINUTES, source === "departed");
+    // V41: only the yellow (in_progress) card reads "Arrived X:XX PM". Every
+    // other state — scheduled, departed-style snapshot in panels, etc. — falls
+    // back to the appointment-time label so the card text matches its colour.
+    const statusLine =
+      v41Card && status !== "in_progress" && rawStatusLine.primary.startsWith("Arrived")
+        ? { ...rawStatusLine, primary: `Appt. ${formatTime(truck.apptMinutes)}` }
+        : rawStatusLine;
 
     if (variant === "compact") {
       return (

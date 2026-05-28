@@ -93,7 +93,8 @@ export function DockManagementV3({
   figmaCard = false,
   densityToggle = false,
   v41Card = false,
-}: { treatment?: Treatment; typefix?: boolean; declutter?: boolean; legendAttached?: boolean; redLate?: boolean; autoReassignLabel?: boolean; prismIcon?: boolean; figmaCard?: boolean; densityToggle?: boolean; v41Card?: boolean } = {}) {
+  docsHeader = false,
+}: { treatment?: Treatment; typefix?: boolean; declutter?: boolean; legendAttached?: boolean; redLate?: boolean; autoReassignLabel?: boolean; prismIcon?: boolean; figmaCard?: boolean; densityToggle?: boolean; v41Card?: boolean; docsHeader?: boolean } = {}) {
   const [dateIso, setDateIso] = useState<string>(TODAY_ISO);
   const [zoom, setZoom] = useState<"compact" | "expanded">("compact");
   const [blockingMode, setBlockingMode] = useState(false);
@@ -108,6 +109,10 @@ export function DockManagementV3({
   const [panelHold, setPanelHold] = useState<string[]>([]);
   /** V40: ordered list of truck IDs in the right-side Unassigned panel. */
   const [panelUnassigned, setPanelUnassigned] = useState<string[]>([]);
+  // Mirror of panelUnassigned, kept in a ref so the keydown handler (which is
+  // mounted once) can read the latest list without re-binding on every change.
+  const panelUnassignedRef = useRef<string[]>([]);
+  panelUnassignedRef.current = panelUnassigned;
   /** V40: drop zone the pointer is currently over while dragging — drives the highlight. */
   const [panelHoverZone, setPanelHoverZone] = useState<"hold" | "unassigned" | null>(null);
   /** V40: zone the current drag originated from, if it started in the panel. */
@@ -152,10 +157,22 @@ export function DockManagementV3({
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
       if (e.key === "w" || e.key === "W") setDemoStep((s) => s + 1);
       else if (e.key === "e" || e.key === "E") setDemoStepE((s) => s + 1);
+      else if (v41Card && (e.key === "h" || e.key === "H")) {
+        // V41: simulate the mobile-only "add to on hold" flow. Web can't add
+        // to On hold (the affordance is gone from the right panel), so this
+        // keypress stands in for the mobile action — the same three trucks
+        // featured in the V41 craft review get bulk-moved into On hold.
+        const targetIds = ["tr-macys-731", "tr-everlasting", "tr-stord-66f0"];
+        setPanelHold((prevHold) => [
+          ...prevHold,
+          ...targetIds.filter((id) => !prevHold.includes(id)),
+        ]);
+        setPanelUnassigned((prev) => prev.filter((id) => !targetIds.includes(id)));
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [v41Card]);
   // Effective step = whichever demo flow has progressed further. W and E share
   // most frames; E diverges at step 4 by auto-displacing ORD-7 instead of
   // letting the W flow reach a step-5 collision modal.
@@ -759,13 +776,20 @@ export function DockManagementV3({
         drag.kind === "active" || justActivated;
       if (pastThreshold && truck) {
         // V40: panel-zone hover takes precedence over grid hit-test.
-        const zone = panelZoneAt(e.clientX, e.clientY);
+        let zone = panelZoneAt(e.clientX, e.clientY);
+        // V41: hold isn't a valid drop target from outside the hold list.
+        if (v41Card && zone === "hold" && panelDragOrigin !== "hold") {
+          zone = null;
+        }
         setPanelHoverZone(zone);
         // Live-reorder within the on-hold list — mutate panelHold during the
         // drag (same technique as the priority-list reorder). Items outside
         // the dragging one have CSS transitions on transform, so they slide
         // smoothly into their new slots.
-        if (panelDragOrigin === "hold" && zone === "hold") {
+        // V41: rearranging within On hold is disabled. Hold cards can still
+        // be dragged OUT to the grid, but moving them within the list is a
+        // no-op. Remove the `!v41Card` guard to restore reorder.
+        if (!v41Card && panelDragOrigin === "hold" && zone === "hold") {
           const holdEl = document.querySelector(
             '[data-drop-zone="hold"]',
           ) as HTMLElement | null;
@@ -806,13 +830,19 @@ export function DockManagementV3({
           // else follows the cursor so the user can place the card before or
           // after its appointment.
           const locked = isTruckInProgress(drag.truckId);
+          // V41: non-locked trucks stick X to their appointment time (or the
+          // current-time bar if appt is in the past). Only the dock follows
+          // the cursor.
+          const v41StickStart = v41Card
+            ? Math.max(truck.apptMinutes, CURRENT_TIME_MINUTES)
+            : null;
           setHoverSlot(
             hit
               ? {
                   dockId: hit.dockId,
                   startMinutes: locked
                     ? lockedStartFor(drag.truckId)
-                    : Math.max(hit.startMinutes, CURRENT_TIME_MINUTES),
+                    : v41StickStart ?? Math.max(hit.startMinutes, CURRENT_TIME_MINUTES),
                 }
               : null,
           );
@@ -844,7 +874,12 @@ export function DockManagementV3({
       );
 
       // V40: panel-zone drop takes precedence over grid hit-test.
-      const droppedZone = panelZoneAt(e.clientX, e.clientY);
+      let droppedZone = panelZoneAt(e.clientX, e.clientY);
+      // V41: web can't add trucks to On hold — only rearrange within hold.
+      // Ignore cross-zone drops onto the hold list.
+      if (v41Card && droppedZone === "hold" && originZone !== "hold") {
+        droppedZone = null;
+      }
       if (figmaCard && droppedZone) {
         // In-progress trucks can't live on the panel — same rule as dropping
         // them on an on-hold dock pre-V40. Show the existing acknowledgement modal.
@@ -907,9 +942,13 @@ export function DockManagementV3({
       // For everything else, store the cursor-snapped time so the user can
       // place the card before or after its appointment.
       const locked = isTruckInProgress(current.truckId);
+      // V41: non-locked trucks stick X to their appointment time (or the
+      // current-time bar if appt is in the past).
       const resolvedStart = locked
         ? truck.apptMinutes
-        : Math.max(hit.startMinutes, CURRENT_TIME_MINUTES);
+        : v41Card
+          ? Math.max(truck.apptMinutes, CURRENT_TIME_MINUTES)
+          : Math.max(hit.startMinutes, CURRENT_TIME_MINUTES);
 
       const fromDockId =
         current.kind === "active" || current.kind === "pending"
@@ -1168,6 +1207,7 @@ export function DockManagementV3({
         prismIcon={prismIcon}
         figmaCard={figmaCard}
         v41Card={v41Card}
+        docsHeader={docsHeader}
         rightOverlay={
           figmaCard ? (
             <AssignmentPanel
@@ -1208,10 +1248,19 @@ export function DockManagementV3({
           className={"fixed z-20 pointer-events-none -translate-x-1/2 " + (legendAttached ? "bottom-0" : "bottom-6")}
           style={{ left: plotCenterX != null ? plotCenterX : "50%" }}
         >
-          <div className={"pointer-events-auto bg-white border border-line shadow-drag flex items-center " + (legendAttached ? "rounded-t-button border-b-0 px-7 py-4 gap-8" : "rounded-button px-4 py-2.5 gap-6")}>
+          <div className={"pointer-events-auto shadow-drag flex items-center " + ((blockingMode || (drag.kind === "active" && draggingTruck)) ? "bg-ink " : "bg-white border border-line ") + (legendAttached ? "rounded-t-button border-b-0 px-7 py-4 gap-8" : "rounded-button px-4 py-2.5 gap-6")}>
             {blockingMode ? (
-              <p className="text-body-md-strong text-ink">
+              <p className="text-body-md-strong text-white">
                 Click and drag on the area you want to block
+              </p>
+            ) : drag.kind === "active" && draggingTruck ? (
+              <p className="text-body-md-strong text-white">
+                {draggingTruck.dateIso === TODAY_ISO &&
+                draggingTruck.status !== "departed" &&
+                draggingTruck.apptMinutes < CURRENT_TIME_MINUTES &&
+                !isTruckInProgress(draggingTruck.id)
+                  ? "Assign a dock for this late truck"
+                  : "Assign a dock for this truck's appointment time"}
               </p>
             ) : (
               declutter ? (
@@ -1268,7 +1317,11 @@ export function DockManagementV3({
             ? [
                 {
                   id: "auto-assign",
-                  label: autoReassignLabel ? "Reset to recommended" : "Auto assign",
+                  label: v41Card
+                    ? "Reset to auto-assignment"
+                    : autoReassignLabel
+                      ? "Reset to recommended"
+                      : "Auto assign",
                   icon: <RotateCw className="size-6 text-ink" strokeWidth={1.75} />,
                   onSelect: () => handleClearOverride(menu.truckId),
                 },
@@ -1278,15 +1331,22 @@ export function DockManagementV3({
           // Departed and in-progress trucks can't be moved off the grid.
           ...(menu && !isTruckDeparted(menu.truckId) && !isTruckInProgress(menu.truckId)
             ? [
-                {
-                  id: "put-on-hold",
-                  label: "Put on hold",
-                  icon: <PrismPauseIcon className="size-6 text-ink" />,
-                  onSelect: () => {
-                    if (menu) moveTruckToPanel(menu.truckId, "hold");
-                    setMenu(null);
-                  },
-                },
+                // V41: web can't add trucks to On hold (that flow lives on
+                // mobile), so the "Put on hold" menu item is hidden. Remove
+                // the `!v41Card` guard to restore it.
+                ...(!v41Card
+                  ? [
+                      {
+                        id: "put-on-hold",
+                        label: "Put on hold",
+                        icon: <PrismPauseIcon className="size-6 text-ink" />,
+                        onSelect: () => {
+                          if (menu) moveTruckToPanel(menu.truckId, "hold");
+                          setMenu(null);
+                        },
+                      },
+                    ]
+                  : []),
                 {
                   id: "unassign",
                   label: "Unassign truck",

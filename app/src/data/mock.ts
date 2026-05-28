@@ -23,11 +23,16 @@ export function setCurrentTimeMinutes(m: number) {
   CURRENT_TIME_MINUTES = m;
 }
 
-/** Default dock occupation when we don't have a real departure yet. */
-const DEFAULT_DURATION = {
+/**
+ * Default appointment window when we don't have a real departure yet.
+ * Per ops (Wintha, May 22): inbound palletized = 30 min, inbound floor-loaded =
+ * 1.5 h, all outbound = 45 min regardless of load type.
+ */
+const DEFAULT_INBOUND_DURATION = {
   pallet: 30, // 30 min
   floor: 90, // 1 h 30 min
 } as const;
+const DEFAULT_OUTBOUND_DURATION = 45;
 
 /** Deterministic pseudo-uuid for prototype: 8-4-4-4-12 hex pattern seeded by index. */
 function mockUuid(seed: number): string {
@@ -625,15 +630,20 @@ const RAW_TRUCKS: Truck[] = [
  * keep their literal `durationMinutes` — that's their actual arrival → departure
  * window pulled from the source data.
  *
- * Future trucks don't have a real departure yet, so we override with default
- * dock occupation by load type: palletized = 30 min, floor-loaded = 90 min.
- * Tomorrow's trucks are always future regardless of clock time.
+ * Future trucks don't have a real departure yet, so we override with the
+ * standard appointment window: inbound palletized = 30 min, inbound
+ * floor-loaded = 90 min, outbound = 45 min (any load type). Tomorrow's trucks
+ * are always future regardless of clock time.
  */
 export const TRUCKS: Truck[] = RAW_TRUCKS.map((t) => {
   const isFuture =
     t.dateIso !== TODAY_ISO || t.apptMinutes >= CURRENT_TIME_MINUTES;
   if (!isFuture) return t;
-  return { ...t, durationMinutes: DEFAULT_DURATION[t.loadType] };
+  const durationMinutes =
+    t.direction === "outbound"
+      ? DEFAULT_OUTBOUND_DURATION
+      : DEFAULT_INBOUND_DURATION[t.loadType];
+  return { ...t, durationMinutes };
 });
 
 /** V1 pre-placed assignments — the trucks shown as "In progress" with a dock in the screenshot. */
