@@ -90,7 +90,7 @@ export const VERSION_OPTIONS: { id: PrototypeVersion; label: string }[] = [
   { id: "v38", label: "V38: Design crit" },
   { id: "v39", label: "V39: Post Crit" },
   { id: "v40", label: "V40: Final iteration" },
-  { id: "v41", label: "V1 Eng delivery" },
+  { id: "v41", label: "V41: M1 release" },
   // { id: "v42", label: "V42: Edit docks 1" }, // disabled — re-enable to restore V42
 ];
 
