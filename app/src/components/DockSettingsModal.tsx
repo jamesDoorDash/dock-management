@@ -707,9 +707,9 @@ const onSortClick = (next: "position" | "priority") => {
                       <HeaderLabel label="Active" tooltip="Toggle to take this dock out of service. Inactive docks won't accept new truck assignments." />
                     </th>
                     <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink">
-                      <Tooltip label="Arrangement of docks which should match how docks are arranged in the facility." wide>
-                        <span className="cursor-help">Dock name</span>
-                      </Tooltip>
+                      {/* Tooltip disabled — to re-enable, wrap the span below in:
+                          <Tooltip label="Arrangement of docks which should match how docks are arranged in the facility." wide>...</Tooltip> */}
+                      <span>Dock name</span>
                     </th>
                     <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink">
                       <HeaderLabel
