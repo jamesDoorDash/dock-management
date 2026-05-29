@@ -44,6 +44,7 @@ import { PopoverMenu } from "../components/PopoverMenu";
 import { DockSettingsModal } from "../components/DockSettingsModal";
 import { TruckDetailSheet } from "../components/TruckDetailSheet";
 import { ErrorModal } from "../components/ErrorModal";
+import { ToastUndo } from "../components/ToastUndo";
 import { BLOCKED_SLOTS, CURRENT_TIME_MINUTES, DOCKS, FACILITY, TODAY_ISO, TRUCKS, setCurrentTimeMinutes } from "../data/mock";
 import type { Assignment, BlockedSlot, Dock, Truck } from "../data/types";
 import { autoAssignAll } from "../lib/autoAssign";
@@ -94,7 +95,8 @@ export function DockManagementV3({
   densityToggle = false,
   v41Card = false,
   docsHeader = false,
-}: { treatment?: Treatment; typefix?: boolean; declutter?: boolean; legendAttached?: boolean; redLate?: boolean; autoReassignLabel?: boolean; prismIcon?: boolean; figmaCard?: boolean; densityToggle?: boolean; v41Card?: boolean; docsHeader?: boolean } = {}) {
+  dropUndoToast = false,
+}: { treatment?: Treatment; typefix?: boolean; declutter?: boolean; legendAttached?: boolean; redLate?: boolean; autoReassignLabel?: boolean; prismIcon?: boolean; figmaCard?: boolean; densityToggle?: boolean; v41Card?: boolean; docsHeader?: boolean; dropUndoToast?: boolean } = {}) {
   const [dateIso, setDateIso] = useState<string>(TODAY_ISO);
   const [zoom, setZoom] = useState<"compact" | "expanded">("compact");
   const [blockingMode, setBlockingMode] = useState(false);
@@ -200,49 +202,81 @@ export function DockManagementV3({
     return () => window.removeEventListener("keydown", onKey);
   }, [v41Card]);
   // Effective step = whichever demo flow has progressed further. W and E share
-  // most frames; E diverges at step 4 by auto-displacing ORD-7 instead of
-  // letting the W flow reach a step-5 collision modal.
+  // the same buildup and diverge at step 5, the frame Allpack's overrun first
+  // overlaps JTV: E auto-reassigns the next arrival (no overlap ever renders),
+  // while W lets them collide and pops the collision modal on that same frame.
   const effectiveStep = Math.max(demoStep, demoStepE);
   // Apply during render so dependent reads of CURRENT_TIME_MINUTES see the new value this pass.
   // Scrubber (>, <, space) overrides the W/E demoStep time when active.
+  //
+  // Step→time ladder is paced around two anchors on Allpack's dock (dock-3):
+  // Allpack is checked in at 14:15 with a 60-min slot (planned depart 15:15),
+  // and JTV — the next arrival on that dock — is staged at 15:25 and pulls in
+  // ~6 min early at 15:19 as a wide 90-min floor bar that stays parked through
+  // ~16:43. We keep steps 1–4 before 15:19 so JTV is a clean future bar sitting
+  // just past Allpack's slot; from step 5 on, Allpack runs over its 15:15 slot
+  // and its bar's right edge (which tracks the current-time line) plows into
+  // JTV's parked bar — a real, growing overlap (~11 min at step 5, ~16 at 6).
+  // effectiveStep 0 (no W/E pressed) must stay at the canonical 14:15 view.
   setCurrentTimeMinutes(
     scrubMinutes !== null
       ? scrubMinutes
       : effectiveStep >= 6
-        ? 15 * 60 + 30
+        ? 15 * 60 + 35
         : effectiveStep >= 5
-          ? 15 * 60 + 25
+          ? 15 * 60 + 30
           : effectiveStep >= 4
-            ? 15 * 60 + 20
+            ? 15 * 60 + 15
             : effectiveStep >= 3
-              ? 15 * 60 + 15
+              ? 15 * 60 + 8
               : effectiveStep >= 2
-                ? 14 * 60 + 50
-                : 14 * 60 + 15,
+                ? 14 * 60 + 55
+                : effectiveStep >= 1
+                  ? 14 * 60 + 40
+                  : 14 * 60 + 15,
   );
   // HM grows ~10% past its appointment starting at frame 2 (overtime while
   // it's still checked in), and stays that wider size through frame 3.
   setHmOvertimeOverride(effectiveStep >= 2 ? 3 : 0);
-  // Allpack stays overtime past frame 3 — bar's right edge follows the time line.
-  setAllpackOvertimeOverride(
-    effectiveStep >= 6 ? 15 : effectiveStep >= 5 ? 10 : effectiveStep >= 4 ? 5 : 0,
-  );
+  // Keep Allpack checked-in (yellow) and overrunning for the whole demo: a big
+  // synthetic stay-overtime pushes its "true" depart well past the demo's time
+  // window, so it never flips to departed/green. The visible bar width is still
+  // driven by the current-time line (getBarRange's overrun branch), not this
+  // value. 0 outside the W/E demo so the scrubber sees Allpack's normal slot.
+  setAllpackOvertimeOverride(effectiveStep >= 4 ? 120 : 0);
   useEffect(() => {
     const anyStarted = demoStep >= 1 || demoStepE >= 1;
     if (anyStarted) {
       setManualOverrides((prev) => {
-        // E auto-displaces ORD-7 at step 4 (silent, no modal). W requires the
-        // user to acknowledge the step-5 collision modal first.
+        // The conflict plays out on Allpack's dock: Allpack is the in-progress
+        // truck running over its slot, and JTV is the next scheduled arrival
+        // queued behind it on the same dock. As Allpack's overrun catches up to
+        // JTV, the system frees JTV to an available dock.
+        //   • E auto-reassigns at step 5 — silent, the instant Allpack starts
+        //     running over, so the user sees JTV hop clear on its own.
+        //   • W leaves JTV in place so it visibly collides at step 5, pops the
+        //     modal on that same frame, and reassigns once the user confirms.
+        // dock-7 is the reassignment target — the next free dock by priority
+        // (4/5/6 are taken by PETCO / STORD / Macys) and, in the active
+        // figmaCard versions, it carries no blocked-time slot.
+        const conflictDock = autoById["tr-allpack"]?.dockId ?? "dock-3";
+        const rescueDock = "dock-7";
         const wDisplaces = demoStep >= 5 && demoCollisionChoice === "confirm";
-        const eDisplaces = demoStepE >= 4;
-        const desiredOrdDock = wDisplaces || eDisplaces ? "dock-6" : "dock-5";
-        if (prev["tr-ord7-in"]?.dockId === desiredOrdDock) return prev;
+        const eDisplaces = demoStepE >= 5;
+        const desiredDock = wDisplaces || eDisplaces ? rescueDock : conflictDock;
+        if (prev["tr-jtv"]?.dockId === desiredDock) return prev;
+        // Staged at 15:25 (its real appt is in the evening) so its ~6-min-early
+        // arrival at 15:19 parks a wide 90-min floor bar right past Allpack's
+        // 15:15 slot — the bar Allpack's overrun then plows into.
         return {
           ...prev,
-          "tr-ord7-in": { truckId: "tr-ord7-in", dockId: desiredOrdDock, startMinutes: 15 * 60 + 25, source: "manual" },
+          "tr-jtv": { truckId: "tr-jtv", dockId: desiredDock, startMinutes: 15 * 60 + 25, source: "manual" },
         };
       });
     }
+    // Modal fires at step 5 — the same frame Allpack's overrun first overlaps
+    // JTV — so the collision and the dialog appear together, never a frame of
+    // collision sitting unaddressed before the prompt.
     if (demoStep === 5 && demoCollisionChoice === null) {
       setDemoCollisionModalOpen(true);
     }
@@ -288,6 +322,18 @@ export function DockManagementV3({
     setToast(message);
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), 3000);
+  }, []);
+
+  /** Drag-drop reposition acknowledgement with a single-step Undo. `key`
+   *  forces the ToastUndo to remount (and replay its slide-in) for each new
+   *  drop, even while a previous toast is still on screen. */
+  const [undoToast, setUndoToast] = useState<
+    { key: number; message: string; undo: () => void } | null
+  >(null);
+  const undoToastKey = useRef(0);
+  const showUndoToast = useCallback((message: string, undo: () => void) => {
+    undoToastKey.current += 1;
+    setUndoToast({ key: undoToastKey.current, message, undo });
   }, []);
 
   const gridRef = useRef<ScheduleGridHandle>(null);
@@ -1025,7 +1071,32 @@ export function DockManagementV3({
         return;
       }
 
+      // Snapshot the bits of state this drop touches so the toast's Undo can
+      // restore the exact prior placement in one step.
+      const prevAssignments = assignments;
+      const prevPanelHold = panelHold;
+      const prevPanelUnassigned = panelUnassigned;
+      const prevManualOverrides = manualOverrides;
+      const prevHoldSlotIds = holdSlotIds;
+      const prevAssignment = assignments.find((a) => a.truckId === current.truckId);
+      const positionChanged =
+        !prevAssignment ||
+        prevAssignment.dockId !== hit.dockId ||
+        prevAssignment.startMinutes !== resolvedStart;
+
       applyMove(current.truckId, hit.dockId, resolvedStart);
+
+      // Acknowledge the reposition with an undoable toast (latest prototype only).
+      if (dropUndoToast && positionChanged) {
+        const dockLabel = docks.find((d) => d.id === hit.dockId)?.label ?? "dock";
+        showUndoToast(`${truck.partner} assigned to ${dockLabel.toLowerCase()}`, () => {
+          setAssignments(prevAssignments);
+          setPanelHold(prevPanelHold);
+          setPanelUnassigned(prevPanelUnassigned);
+          setManualOverrides(prevManualOverrides);
+          setHoldSlotIds(prevHoldSlotIds);
+        });
+      }
     };
 
     window.addEventListener("pointermove", onMove);
@@ -1279,6 +1350,26 @@ export function DockManagementV3({
           </div>
         )}
 
+        {/* Reposition acknowledgement toast (Figma Toast component) with Undo —
+            slides up from the bottom and back down, aligned with plot center. */}
+        {dropUndoToast && undoToast && (
+          <div
+            className="fixed bottom-20 z-30 pointer-events-none -translate-x-1/2"
+            style={{ left: plotCenterX != null ? plotCenterX : "50%" }}
+          >
+            <ToastUndo
+              key={undoToast.key}
+              message={undoToast.message}
+              onUndo={undoToast.undo}
+              onDismiss={() =>
+                setUndoToast((cur) =>
+                  cur && cur.key === undoToast.key ? null : cur,
+                )
+              }
+            />
+          </div>
+        )}
+
         {/* Centered floating legend pill */}
         <div
           className={"fixed z-20 pointer-events-none -translate-x-1/2 " + (legendAttached ? "bottom-0" : "bottom-6")}
@@ -1428,15 +1519,29 @@ export function DockManagementV3({
             onCancel={() => setPendingMove(null)}
             onConfirm={() => {
               const { truckId, toDockId, mode } = pendingMove;
+              const prevAssignments = assignments;
               setPendingMove(null);
+              const toast = () => {
+                if (!dropUndoToast) return;
+                const landedDockId =
+                  mode === "reset" ? autoById[truckId]?.dockId : toDockId;
+                const label =
+                  docks.find((d) => d.id === landedDockId)?.label ?? "dock";
+                showUndoToast(
+                  `${trucksById[truckId]?.partner ?? "Truck"} assigned to ${label.toLowerCase()}`,
+                  () => setAssignments(prevAssignments),
+                );
+              };
               if (mode === "reset") {
                 // Reset to recommended: drop the manual override entirely
                 // (the auto-assigned slot already has the right startMinutes).
                 applyClearOverride(truckId);
+                toast();
                 return;
               }
               // Confirming an in-progress move may still land on top of
-              // another truck — chain into the collision modal if so.
+              // another truck — chain into the collision modal if so. The
+              // collision confirm shows its own undo toast, so skip ours here.
               const colliderId = findCollider(truckId, toDockId);
               if (colliderId) {
                 const snapshot = assignments;
@@ -1450,6 +1555,7 @@ export function DockManagementV3({
                 return;
               }
               applyMove(truckId, toDockId);
+              toast();
             }}
           />
         );
@@ -1471,12 +1577,16 @@ export function DockManagementV3({
               setPendingCollision(null);
             }}
             onConfirm={() => {
-              applyMoveWithDisplacement(
-                pendingCollision.truckId,
-                pendingCollision.toDockId,
-                pendingCollision.colliderTruckId,
-              );
+              const { truckId, toDockId, colliderTruckId, previousAssignments } =
+                pendingCollision;
+              applyMoveWithDisplacement(truckId, toDockId, colliderTruckId);
               setPendingCollision(null);
+              if (dropUndoToast) {
+                showUndoToast(
+                  `${trucksById[truckId]?.partner ?? "Truck"} assigned to ${toLabel.toLowerCase()}`,
+                  () => setAssignments(previousAssignments),
+                );
+              }
             }}
           />
         );
@@ -1486,8 +1596,8 @@ export function DockManagementV3({
         <ErrorModal
           open
           hideCancel
-          title="Dock 5 conflict detected"
-          description="A truck in progress now overlaps with a scheduled truck. The scheduled truck will be reassigned to an available dock."
+          title={`${docks.find((d) => d.id === (autoById["tr-allpack"]?.dockId ?? "dock-3"))?.label ?? "Dock"} conflict detected`}
+          description="A truck in progress is now running over its slot and overlaps the next scheduled arrival. The scheduled truck will be reassigned to an available dock."
           confirmLabel="Okay"
           onCancel={() => {
             setDemoCollisionChoice("confirm");

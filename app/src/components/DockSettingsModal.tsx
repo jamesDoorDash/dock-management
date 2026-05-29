@@ -474,6 +474,7 @@ function ManageDocksTab({
   const REARRANGE_ROW_H = 56;
   const [sortBy, setSortBy] = useState<"position" | "priority">("position");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+// @ts-expect-error sort handler kept for reference — wire back up to re-enable column sorting
 const onSortClick = (next: "position" | "priority") => {
     if (next === sortBy) {
       setSortDir((d) => (d === "desc" ? "asc" : "desc"));
@@ -705,26 +706,15 @@ const onSortClick = (next: "position" | "priority") => {
                     <th className="border-b border-line px-3 pl-4 py-3 text-left text-body-sm-strong text-ink">
                       <HeaderLabel label="Active" tooltip="Toggle to take this dock out of service. Inactive docks won't accept new truck assignments." />
                     </th>
-                    <th
-                      className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink cursor-pointer select-none"
-                      onClick={() => onSortClick("position")}
-                    >
-                      <SortableHeaderLabel
-                        label="Dock position"
-                        tooltip="Arrangement of docks which should match how docks are arranged in the facility."
-                        active={sortBy === "position"}
-                        dir={sortDir}
-                      />
+                    <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink">
+                      <Tooltip label="Arrangement of docks which should match how docks are arranged in the facility." wide>
+                        <span className="cursor-help">Dock name</span>
+                      </Tooltip>
                     </th>
-                    <th
-                      className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink cursor-pointer select-none"
-                      onClick={() => onSortClick("priority")}
-                    >
-                      <SortableHeaderLabel
+                    <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink">
+                      <HeaderLabel
                         label="Dock priority"
                         tooltip="Ranking that determines which dock doors are filled first when trucks are auto-assigned."
-                        active={sortBy === "priority"}
-                        dir={sortDir}
                       />
                     </th>
                     <th className="border-b border-line px-3 py-3 text-left text-body-sm-strong text-ink">
@@ -864,6 +854,7 @@ function HeaderLabel({ label, tooltip }: { label: string; tooltip: string }) {
   );
 }
 
+// @ts-expect-error sortable header kept for reference — re-add to a column to re-enable sorting
 function SortableHeaderLabel({
   label,
   tooltip,
@@ -1079,9 +1070,9 @@ function EquipmentTooltip({
                     {on ? (
                       <Check className="size-4 shrink-0" strokeWidth={2} />
                     ) : (
-                      <span className="size-4 shrink-0 opacity-30">—</span>
+                      <X className="size-4 shrink-0" strokeWidth={2} />
                     )}
-                    <span className={cn(!on && "opacity-50 line-through")}>{t.label}</span>
+                    <span className={cn(!on && "text-[#d6d6d6]")}>{t.label}</span>
                   </span>
                 );
               })}
